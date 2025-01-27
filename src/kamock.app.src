@@ -1,0 +1,14 @@
+{application, kamock, [
+    {description, "Mock Kafka broker"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        ranch,
+        telemetry
+    ]},
+    {env, []},
+    {modules, []},
+    {links, []}
+]}.
