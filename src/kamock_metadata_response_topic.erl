@@ -32,9 +32,12 @@ make_metadata_response_topic(_Topic = #{name := TopicName}, PartitionCount, Env)
 
 partitions(PartitionIndexes) ->
     fun(_Topic = #{name := TopicName}, Env) ->
+        TopicId = uuid:uuid_to_string(uuid:get_v5(TopicName), binary_standard),
         #{
             error_code => ?NONE,
             name => TopicName,
+            % 'topic_id' was added in v10; encoder will ignore it for earlier versions.
+            topic_id => TopicId,
             is_internal => false,
             partitions => [
                 kamock_metadata_response_partition:make_metadata_response_partition(

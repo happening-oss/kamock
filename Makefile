@@ -5,6 +5,11 @@ PROJECT_VERSION = $(shell scripts/git-vsn)
 compile:
 	rebar3 compile
 
+eunit:
+	rebar3 eunit
+
+all: compile eunit
+
 GNU_TAR ?= gtar
 ARCHIVE := ../$(PROJECT)-$(PROJECT_VERSION).tar
 

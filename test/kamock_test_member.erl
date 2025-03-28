@@ -195,7 +195,8 @@ handle_sync_group_response(
     Role,
     StateData = #state{owner = Owner}
 ) ->
-    Owner ! {?MODULE, self(), Role},
+    ?LOG_DEBUG("~s: sync_group", [StateData#state.member_id]),
+    Owner ! {kamock_test_member, self(), {sync_group, Role}},
     loop(StateData).
 
 loop(StateData = #state{connection = Connection}) ->

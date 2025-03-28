@@ -19,7 +19,7 @@ handle_request(
     Packet,
     Env
 ) ->
-    % kcat uses v8.
+    % old kcat uses v8.
     {ProduceRequest, <<>>} = produce_request:decode_produce_request_8(Packet),
     ProduceResponse = kamock_produce:handle_produce_request(ProduceRequest, Env),
     {reply, produce_response:encode_produce_response_8(ProduceResponse)};
@@ -29,6 +29,10 @@ handle_request(
     Packet,
     Env
 ) ->
+    % kafire uses v11.
+    %
+    % Note: recent kcat prefers v15, but v13+ uses topic_id (UUID) rather than topic (STRING or COMPACT_STRING), which
+    % complicates things, so we'll not bother with that for now.
     {FetchRequest, <<>>} = fetch_request:decode_fetch_request_11(Packet),
     FetchResponse = kamock_fetch:handle_fetch_request(FetchRequest, Env),
     {reply, fetch_response:encode_fetch_response_11(FetchResponse)};
@@ -365,7 +369,20 @@ handle_request(
     DescribeConfigsResponse = kamock_describe_configs:handle_describe_configs_request(
         DescribeConfigsRequest, Env
     ),
-    {reply, describe_configs_response:encode_describe_configs_response_2(DescribeConfigsResponse)}.
+    {reply, describe_configs_response:encode_describe_configs_response_2(DescribeConfigsResponse)};
+handle_request(
+    _ApiKey = ?DESCRIBE_CLUSTER,
+    _ApiVersion = 0,
+    Packet,
+    Env
+) ->
+    {DescribeClusterRequest, <<>>} = describe_cluster_request:decode_describe_cluster_request_0(
+        Packet
+    ),
+    DescribeClusterResponse = kamock_describe_cluster:handle_describe_cluster_request(
+        DescribeClusterRequest, Env
+    ),
+    {reply, describe_cluster_response:encode_describe_cluster_response_0(DescribeClusterResponse)}.
 
 patch_list_offsets_request(ListOffsetsRequest0) ->
     maps:update_with(

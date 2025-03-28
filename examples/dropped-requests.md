@@ -37,3 +37,5 @@ meck:expect(kamock_broker_handler, handle_request,
         {['_', '_', '_', '_'], meck:passthrough()}
     ]).
 ```
+
+See also [closed-connections](closed-connections.md) for another way to inject faults with kamock.

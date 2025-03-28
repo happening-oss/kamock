@@ -2,7 +2,11 @@
 -export([
     start/1,
     start/2,
-    stop/1
+    stop/1,
+
+    info/1,
+
+    rebalance/1
 ]).
 -export([call/2]).
 -behaviour(gen_statem).
@@ -30,6 +34,7 @@
     options,
     generation_id,
     leader_id,
+    members,
     assignments,
     session_timeout_ms
 }).
@@ -40,8 +45,17 @@ start(Ref) ->
 start(_Ref, Options) ->
     gen_statem:start(?MODULE, [maps:merge(default_options(), Options)], start_options()).
 
+-ifndef(ENABLE_TRACING).
 start_options() -> [].
-% start_options() -> [{debug, [trace]}].
+-else.
+start_options() ->
+    TFun = fun(X, Y, State) ->
+        ?LOG_DEBUG("~p ~p", [X, Y]),
+        State
+    end,
+    TState = undefined,
+    [{debug, [{install, {?MODULE, {TFun, TState}}}]}].
+-endif.
 
 default_options() ->
     #{
@@ -50,6 +64,12 @@ default_options() ->
 
 stop(Coordinator) ->
     gen_statem:stop(Coordinator).
+
+info(Coordinator) ->
+    gen_statem:call(Coordinator, info).
+
+rebalance(Coordinator) ->
+    gen_statem:call(Coordinator, rebalance).
 
 callback_mode() ->
     [handle_event_function].
@@ -60,10 +80,31 @@ init([Options]) ->
         generation_id = 1,
         leader_id = undefined,
         assignments = [],
+        members = [],
         session_timeout_ms = 45_000
     },
     {ok, stable, StateData}.
 
+handle_event(
+    {call, From},
+    info,
+    State,
+    _StateData = #state{generation_id = GenerationId, members = Members}
+) ->
+    Info =
+        {State, #{
+            generation_id => GenerationId,
+            members => Members
+        }},
+    {keep_state_and_data, [{reply, From, Info}]};
+handle_event(
+    {call, From},
+    rebalance,
+    _State,
+    StateData = #state{generation_id = GenerationId}
+) ->
+    StateData2 = StateData#state{generation_id = GenerationId + 1},
+    {keep_state, StateData2, [{reply, From, ok}]};
 handle_event(
     {call, From},
     {join_group, JoinGroupRequest = #{session_timeout_ms := SessionTimeoutMs}},
@@ -72,7 +113,8 @@ handle_event(
         options = #{initial_rebalance_delay_ms := InitialRebalanceDelayMs}
     }
 ) ->
-    ?LOG_DEBUG("join_group"),
+    #{member_id := MemberId} = JoinGroupRequest,
+    ?LOG_DEBUG("join_group (leader ~s)", [MemberId]),
     trace(join_group),
     % First one in is the leader.
     Joiner = {From, JoinGroupRequest},
@@ -81,7 +123,8 @@ handle_event(
         {{timeout, initial_rebalance}, InitialRebalanceDelayMs, initial_rebalance}
     ]};
 handle_event({call, From}, {join_group, JoinGroupRequest}, {joining, Joiners}, StateData) ->
-    ?LOG_DEBUG("join_group"),
+    #{member_id := MemberId} = JoinGroupRequest,
+    ?LOG_DEBUG("join_group (follower ~s)", [MemberId]),
     trace(join_group),
     Joiner = {From, JoinGroupRequest},
     {next_state, {joining, [Joiner | Joiners]}, StateData};
@@ -104,7 +147,7 @@ handle_event(
     Members = lists:map(
         fun(
             _Joiner =
-                {_, #{
+                {_MemberPid, _Member = #{
                     member_id := MemberId,
                     group_instance_id := GroupInstanceId,
                     protocols := [Protocol | _]
@@ -128,7 +171,7 @@ handle_event(
         Followers
     ),
     % TODO: Start timers for each member -- if they don't SyncGroup, we need another rebalance.
-    StateData2 = StateData#state{generation_id = GenerationId2, leader_id = LeaderId},
+    StateData2 = StateData#state{generation_id = GenerationId2, leader_id = LeaderId, members = Members},
     {next_state, await_sync, StateData2, Replies};
 handle_event(
     {timeout, initial_rebalance},
@@ -145,7 +188,7 @@ handle_event(
     await_sync,
     _StateData = #state{leader_id = LeaderId}
 ) when MemberId =/= LeaderId ->
-    ?LOG_DEBUG("sync_group (follower)"),
+    ?LOG_DEBUG("sync_group (follower ~s); postpone", [MemberId]),
     trace(sync_group),
     % SyncGroup from a follower. Postpone it until we've got the leader's response.
     {keep_state_and_data, [postpone]};
@@ -163,7 +206,7 @@ handle_event(
         generation_id = GenerationId
     }
 ) when MemberId =:= LeaderId ->
-    ?LOG_DEBUG("sync_group (leader)"),
+    ?LOG_DEBUG("sync_group (leader ~s); postpone", [MemberId]),
     trace(sync_group),
     % SyncGroup from the leader. Save the assignments. Don't reply just yet.
     StateData2 = StateData#state{assignments = Assignments},
@@ -185,7 +228,7 @@ handle_event(
         assignments = Assignments
     }
 ) ->
-    ?LOG_DEBUG("sync_group (member)"),
+    ?LOG_DEBUG("sync_group (member ~s)", [MemberId]),
     trace(sync_group),
     % If this member doesn't appear in the leader's assignments, return <<>>. Verified with a real broker.
     Assignment =
@@ -276,7 +319,6 @@ handle_event(
 ) ->
     ?LOG_DEBUG("heartbeat"),
     trace(heartbeat),
-    % TODO: What does a real broker do if the generation is wrong, or if the member isn't? We'll just crash the coordinator.
     HeartbeatResponse = #{
         correlation_id => CorrelationId,
         error_code => ?NONE,
@@ -292,12 +334,36 @@ handle_event(
     {heartbeat,
         _HeartbeatRequest = #{
             correlation_id := CorrelationId,
-            group_id := _GroupId
+            group_id := _GroupId,
+            generation_id := GenerationId1,
+            member_id := MemberId
+        }},
+    stable,
+    StateData = #state{
+        generation_id = GenerationId2
+    }
+) when GenerationId1 /= GenerationId2 ->
+    ?LOG_DEBUG("heartbeat, wrong generation (member ~s)", [MemberId]),
+    trace(heartbeat),
+    HeartbeatResponse = #{
+        correlation_id => CorrelationId,
+        error_code => ?REBALANCE_IN_PROGRESS,
+        throttle_time_ms => 0
+    },
+    % I'm not entirely happy with using 'stable' here...
+    {next_state, stable, StateData, [{reply, From, HeartbeatResponse}]};
+handle_event(
+    {call, From},
+    {heartbeat,
+        _HeartbeatRequest = #{
+            correlation_id := CorrelationId,
+            group_id := _GroupId,
+            member_id := MemberId
         }},
     {joining, _},
     _StateData
 ) ->
-    ?LOG_DEBUG("rebalance in progress"),
+    ?LOG_DEBUG("rebalance in progress (member ~s)", [MemberId]),
     trace(rebalance_in_progress),
     HeartbeatResponse = #{
         correlation_id => CorrelationId,
