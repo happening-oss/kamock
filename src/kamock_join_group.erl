@@ -6,6 +6,7 @@
 -export([
     as_leader/0,
     as_leader/1,
+    as_leader/2,
 
     as_follower/0,
     as_follower/1,
@@ -77,9 +78,14 @@ generate_member_id(ClientId) ->
 
 as_leader() ->
     GenerationId = 0,
-    as_leader(GenerationId).
+    as_leader(GenerationId, fun default_protocol/2).
 
 as_leader(GenerationId) ->
+    as_leader(GenerationId, fun default_protocol/2).
+
+as_leader(GenerationId, SelectProtocolFun) when
+    is_integer(GenerationId), is_function(SelectProtocolFun, 2)
+->
     fun
         (JoinGroupRequest = #{member_id := <<>>}, _Env) ->
             member_id_required(JoinGroupRequest);
@@ -93,7 +99,7 @@ as_leader(GenerationId) ->
             },
             _Env
         ) ->
-            [Protocol | _] = Protocols,
+            Protocol = SelectProtocolFun(ProtocolType, Protocols),
             #{name := ProtocolName, metadata := Metadata} = Protocol,
 
             Members = [
@@ -106,6 +112,10 @@ as_leader(GenerationId) ->
                 CorrelationId, GenerationId, ProtocolType, ProtocolName, LeaderId, MemberId, Members
             )
     end.
+
+default_protocol(_ProtocolType, Protocols) ->
+    [Protocol | _] = Protocols,
+    Protocol.
 
 as_follower() ->
     LeaderId = generate_member_id(<<"leader">>),

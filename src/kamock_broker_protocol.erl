@@ -10,6 +10,9 @@
     callback_mode/0,
     handle_event/4
 ]).
+-export([
+    connection_info/1
+]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -49,14 +52,16 @@ init([Ref, Transport, _Opts = #{handler := Handler, env := Env}]) ->
     },
     {ok, connected, StateData}.
 
-init_messages(Transport = ranch_tcp) ->
-    % Backwards compatibility: Ranch 2.x adds the passive message for {active, N}.
-    case Transport:messages() of
-        {Tcp, Closed, Error} ->
-            {Tcp, Closed, Error, tcp_passive};
-        Messages ->
-            Messages
-    end.
+init_messages(Transport) ->
+    compat_messages(Transport, Transport:messages()).
+
+% Backwards compatibility: Ranch 2.x adds the passive message for {active, N}.
+compat_messages(ranch_tcp, {Tcp, Closed, Error}) ->
+    {Tcp, Closed, Error, tcp_passive};
+compat_messages(ranch_ssl, {Tcp, Closed, Error}) ->
+    {Tcp, Closed, Error, ssl_passive};
+compat_messages(_, Messages) ->
+    Messages.
 
 handle_event(
     enter,
@@ -103,7 +108,14 @@ handle_event(
         messages = {_Tcp, _Closed, Error, _Passive}, socket = Socket
     }
 ) ->
-    stop.
+    stop;
+handle_event(
+    {call, From},
+    connection_info,
+    _State,
+    _StateData = #state{transport = Transport, socket = Socket}
+) ->
+    {keep_state_and_data, [{reply, From, #{transport => Transport, socket => Socket}}]}.
 
 handle_request_result(
     {reply, Reply},
@@ -124,3 +136,6 @@ handle_request_result(
     _StateData
 ) ->
     {stop, Reason}.
+
+connection_info(Pid) ->
+    gen_statem:call(Pid, connection_info).

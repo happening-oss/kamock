@@ -1,6 +1,7 @@
 -module(kamock_list_offsets_partition_response).
 -export([make_list_offsets_partition_response/3]).
 -export([
+    empty/0,
     range/2,
     from_ets/1
 ]).
@@ -26,6 +27,11 @@ make_list_offsets_partition_response(
         leader_epoch => LeaderEpoch
     }.
 
+empty() ->
+    range(0, 0).
+
+%% FirstOffset is the offset of the first message; LastOffset is the offset of the *next* message.
+%% For an empty partition, FirstOffset == LastOffset; for a single message, FirstOffset + 1 == LastOffset.
 range(FirstOffset, LastOffset) when FirstOffset =< LastOffset ->
     fun(
         _TopicName,

@@ -11,6 +11,7 @@
 all_test_() ->
     {foreach, fun setup/0, fun cleanup/1, [
         fun as_leader/0,
+        fun select_protocol/0,
         fun as_follower/0
     ]}.
 
@@ -62,6 +63,75 @@ as_leader() ->
 
     JoinGroupRequest2 = JoinGroupRequest1#{member_id => MemberId},
     {ok, #{leader := MemberId, protocol_name := <<"range">>, members := Members}} =
+        kafcod_connection:call(
+            Connection,
+            fun join_group_request:encode_join_group_request_7/1,
+            JoinGroupRequest2,
+            fun join_group_response:decode_join_group_response_7/1
+        ),
+    [#{member_id := MemberId, metadata := Metadata}] = Members,
+    ?assertMatch(
+        #{topics := [TopicName1, TopicName2], user_data := <<>>},
+        kafcod_consumer_protocol:decode_metadata(Metadata)
+    ),
+
+    kafcod_connection:stop(Connection),
+    kamock_broker:stop(Broker),
+    ok.
+
+select_protocol() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+    GroupId = ?GROUP_ID,
+    TopicName1 = ?TOPIC_NAME,
+    TopicName2 = ?TOPIC_NAME_2,
+
+    meck:expect(
+        kamock_join_group,
+        handle_join_group_request,
+        kamock_join_group:as_leader(0, fun(_ProtocolType, Protocols) ->
+            [_, Protocol] = Protocols,
+            Protocol
+        end)
+    ),
+
+    % Now for the fun part: we need an *entire* JoinGroup flow.
+    {ok, Connection} = kafcod_connection:start_link(Broker),
+
+    % Multiple protocols; choose the second one.
+    Protocols = [
+        #{
+            name => <<"range">>,
+            metadata => kafcod_consumer_protocol:encode_metadata(#{
+                topics => [TopicName1, TopicName2], user_data => <<>>
+            })
+        },
+        #{
+            name => <<"roundrobin">>,
+            metadata => kafcod_consumer_protocol:encode_metadata(#{
+                topics => [TopicName1, TopicName2], user_data => <<>>
+            })
+        }
+    ],
+    JoinGroupRequest1 = #{
+        session_timeout_ms => 45_000,
+        rebalance_timeout_ms => 90_000,
+        protocol_type => <<"consumer">>,
+        protocols => Protocols,
+        member_id => <<>>,
+        group_instance_id => null,
+        group_id => GroupId
+    },
+    {ok, #{error_code := ?MEMBER_ID_REQUIRED, member_id := MemberId}} =
+        kafcod_connection:call(
+            Connection,
+            fun join_group_request:encode_join_group_request_7/1,
+            JoinGroupRequest1,
+            fun join_group_response:decode_join_group_response_7/1
+        ),
+    ?assertNotEqual(<<>>, MemberId),
+
+    JoinGroupRequest2 = JoinGroupRequest1#{member_id => MemberId},
+    {ok, #{leader := MemberId, protocol_name := <<"roundrobin">>, members := Members}} =
         kafcod_connection:call(
             Connection,
             fun join_group_request:encode_join_group_request_7/1,
