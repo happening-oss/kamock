@@ -4,9 +4,13 @@
 -include_lib("kafcod/include/isolation_level.hrl").
 
 build_fetch_request(Topic, Partitions) when is_binary(Topic), is_list(Partitions) ->
-    Offset = 0,
     PartitionOffsets = lists:foldl(
-        fun(Partition, Acc) -> Acc#{Partition => Offset} end, #{}, Partitions
+        fun(Partition, Acc) ->
+            Offset = 0,
+            Acc#{Partition => Offset}
+        end,
+        #{},
+        Partitions
     ),
     build_fetch_request(Topic, PartitionOffsets);
 build_fetch_request(Topic, PartitionOffsets) when is_binary(Topic), is_map(PartitionOffsets) ->

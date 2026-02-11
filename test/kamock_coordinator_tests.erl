@@ -15,11 +15,14 @@
 
 all_test_() ->
     {foreach, fun setup/0, fun cleanup/1, [
+        % separate 'with' clauses, so that the 'foreach' applies to each of them.
         {with, [fun single_member_joins/1]},
         {with, [fun multiple_members_join/1]},
         {with, [fun leader_stops_heartbeating/1]},
         {with, [fun follower_leaves_group/1]},
         {with, [fun new_member_joins/1]},
+        {with, [fun new_member_joins_keep_leader/1]},
+        {with, [fun new_member_joins_change_leader/1]},
         {with, [fun trigger_rebalance/1]}
     ]}.
 
@@ -51,28 +54,28 @@ setup() ->
         handle_heartbeat_request,
         kamock_coordinator:heartbeat(Coordinator)
     ),
-    {Broker, Coordinator}.
+    #{broker => Broker, coordinator => Coordinator}.
 
-cleanup({Broker, Coordinator}) ->
+cleanup(#{broker := Broker, coordinator := Coordinator}) ->
     kamock_coordinator:stop(Coordinator),
     kamock_broker:stop(Broker),
     meck:unload(),
     ok.
 
-single_member_joins({Broker, _}) ->
+single_member_joins(#{broker := Broker}) ->
     {ok, M} = kamock_test_member:start_link(
         Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
     ),
 
     % Wait until the member is the leader.
     receive
-        {kamock_test_member, M, {sync_group, leader}} -> ok
+        {kamock_test_member, M, {sync_group, leader, _}} -> ok
     end,
 
     kamock_test_member:stop(M),
     ok.
 
-multiple_members_join({Broker, _}) ->
+multiple_members_join(#{broker := Broker}) ->
     {ok, M1} = kamock_test_member:start_link(
         Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
     ),
@@ -82,17 +85,17 @@ multiple_members_join({Broker, _}) ->
 
     % Wait until both members have joined.
     receive
-        {kamock_test_member, _, {sync_group, leader}} -> ok
+        {kamock_test_member, _, {sync_group, leader, _}} -> ok
     end,
     receive
-        {kamock_test_member, _, {sync_group, follower}} -> ok
+        {kamock_test_member, _, {sync_group, follower, _}} -> ok
     end,
 
     kamock_test_member:stop(M1),
     kamock_test_member:stop(M2),
     ok.
 
-leader_stops_heartbeating({Broker, Coordinator}) ->
+leader_stops_heartbeating(#{broker := Broker, coordinator := Coordinator}) ->
     {ok, M1} = kamock_test_member:start_link(
         Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
     ),
@@ -103,11 +106,11 @@ leader_stops_heartbeating({Broker, Coordinator}) ->
     % Wait until both members have joined.
     Leader =
         receive
-            {kamock_test_member, L, {sync_group, leader}} -> L
+            {kamock_test_member, L, {sync_group, leader, _}} -> L
         end,
     Follower =
         receive
-            {kamock_test_member, F, {sync_group, follower}} -> F
+            {kamock_test_member, F, {sync_group, follower, _}} -> F
         end,
 
     % Leader stops heartbeating.
@@ -116,7 +119,7 @@ leader_stops_heartbeating({Broker, Coordinator}) ->
 
     % Wait until the other member rejoins as the leader
     receive
-        {kamock_test_member, Follower, {sync_group, leader}} -> ok
+        {kamock_test_member, Follower, {sync_group, leader, _}} -> ok
     end,
 
     ?assertMatch({stable, _}, sys:get_state(Coordinator)),
@@ -128,7 +131,7 @@ leader_stops_heartbeating({Broker, Coordinator}) ->
 % TODO: Follower stops heartbeating. Reuse the old leader. Will need > 2 members to prove this.
 % TODO: Real coordinator (somehow) waits for previous members to rejoin. Not sure how that works.
 
-follower_leaves_group({Broker, Coordinator}) ->
+follower_leaves_group(#{broker := Broker, coordinator := Coordinator}) ->
     % kamock_coordinator calls 'kamock_coordinator:trace/1' at various points; hook that and send those calls here.
     dbg:tracer(process, {
         fun({trace, _Pid, call, {_M, _F, Args}}, Self) ->
@@ -150,11 +153,11 @@ follower_leaves_group({Broker, Coordinator}) ->
     % Wait until both members have joined.
     Leader =
         receive
-            {kamock_test_member, L, {sync_group, leader}} -> L
+            {kamock_test_member, L, {sync_group, leader, _}} -> L
         end,
     Follower =
         receive
-            {kamock_test_member, F, {sync_group, follower}} -> F
+            {kamock_test_member, F, {sync_group, follower, _}} -> F
         end,
 
     % Follower leaves the group normally.
@@ -168,7 +171,7 @@ follower_leaves_group({Broker, Coordinator}) ->
 
     % Wait until the other member rejoins as the leader
     receive
-        {kamock_test_member, Leader, {sync_group, leader}} -> ok
+        {kamock_test_member, Leader, {sync_group, leader, _}} -> ok
     end,
 
     ?LOG_DEBUG("leader is leader again"),
@@ -185,7 +188,7 @@ follower_leaves_group({Broker, Coordinator}) ->
     dbg:stop(),
     ok.
 
-new_member_joins({Broker, Coordinator}) ->
+new_member_joins(#{broker := Broker, coordinator := Coordinator}) ->
     % Member 1 joins the group.
     {ok, M1} = kamock_test_member:start_link(
         Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
@@ -193,7 +196,7 @@ new_member_joins({Broker, Coordinator}) ->
 
     % Wait until the first member has joined.
     receive
-        {kamock_test_member, _, {sync_group, leader}} -> ok
+        {kamock_test_member, _, {sync_group, leader, _}} -> ok
     end,
 
     % Member 2 joins the group; this should cause a rebalance.
@@ -203,10 +206,10 @@ new_member_joins({Broker, Coordinator}) ->
 
     % Wait until both members rejoin.
     receive
-        {kamock_test_member, _, {sync_group, leader}} -> ok
+        {kamock_test_member, _, {sync_group, leader, _}} -> ok
     end,
     receive
-        {kamock_test_member, _, {sync_group, follower}} -> ok
+        {kamock_test_member, _, {sync_group, follower, _}} -> ok
     end,
 
     ?assertMatch(
@@ -218,7 +221,81 @@ new_member_joins({Broker, Coordinator}) ->
     kamock_test_member:stop(M2),
     ok.
 
-trigger_rebalance({Broker, Coordinator}) ->
+new_member_joins_keep_leader(#{broker := Broker, coordinator := Coordinator}) ->
+    % Member 1 joins the group.
+    {ok, M1} = kamock_test_member:start_link(
+        Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
+    ),
+
+    % Wait until the first member has joined.
+    receive
+        {kamock_test_member, _, {sync_group, leader, {MemberId, _}}} -> ok
+    end,
+
+    % The default behaviour (above) is to have the first joiner be the leader. This is potentially racy. We allow you to
+    % be explicit by mocking kamock_coordinator_election; we demonstrate that here.
+    meck:expect(kamock_coordinator_election, elect, kamock_coordinator_election:choose(MemberId)),
+
+    % Member 2 joins the group; this should cause a rebalance.
+    {ok, M2} = kamock_test_member:start_link(
+        Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
+    ),
+
+    % Wait until both members rejoin. M1 should be the leader.
+    receive
+        {kamock_test_member, M1, {sync_group, leader, _}} -> ok
+    end,
+    receive
+        {kamock_test_member, M2, {sync_group, follower, _}} -> ok
+    end,
+
+    ?assertMatch(
+        {stable, #{generation_id := 3, members := [_ | _]}},
+        kamock_coordinator:info(Coordinator)
+    ),
+
+    kamock_test_member:stop(M1),
+    kamock_test_member:stop(M2),
+    ok.
+
+new_member_joins_change_leader(#{broker := Broker, coordinator := Coordinator}) ->
+    % Member 1 joins the group.
+    {ok, M1} = kamock_test_member:start_link(
+        Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
+    ),
+
+    % Wait until the first member has joined.
+    receive
+        {kamock_test_member, _, {sync_group, leader, {MemberId, _}}} -> ok
+    end,
+
+    % The default behaviour (above) is to have the first joiner be the leader. This is potentially racy. We allow you to
+    % be explicit by mocking kamock_coordinator_election; we demonstrate choosing a _different_ member here.
+    meck:expect(kamock_coordinator_election, elect, kamock_coordinator_election:reject(MemberId)),
+
+    % Member 2 joins the group; this should cause a rebalance.
+    {ok, M2} = kamock_test_member:start_link(
+        Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
+    ),
+
+    % Wait until both members rejoin. M2 should be the leader.
+    receive
+        {kamock_test_member, M2, {sync_group, leader, _}} -> ok
+    end,
+    receive
+        {kamock_test_member, M1, {sync_group, follower, _}} -> ok
+    end,
+
+    ?assertMatch(
+        {stable, #{generation_id := 3, members := [_ | _]}},
+        kamock_coordinator:info(Coordinator)
+    ),
+
+    kamock_test_member:stop(M1),
+    kamock_test_member:stop(M2),
+    ok.
+
+trigger_rebalance(#{broker := Broker, coordinator := Coordinator}) ->
     {ok, M1} = kamock_test_member:start_link(
         Broker, self(), ?GROUP_ID, [?TOPIC_NAME], ?MEMBER_OPTIONS
     ),
@@ -228,10 +305,10 @@ trigger_rebalance({Broker, Coordinator}) ->
 
     % Wait until both members have joined.
     receive
-        {kamock_test_member, _, {sync_group, leader}} -> ok
+        {kamock_test_member, _, {sync_group, leader, _}} -> ok
     end,
     receive
-        {kamock_test_member, _, {sync_group, follower}} -> ok
+        {kamock_test_member, _, {sync_group, follower, _}} -> ok
     end,
 
     % Trigger a rebalance _without_ joining/leaving.
@@ -239,10 +316,10 @@ trigger_rebalance({Broker, Coordinator}) ->
 
     % Wait until both members have rejoined.
     receive
-        {kamock_test_member, _, {sync_group, leader}} -> ok
+        {kamock_test_member, _, {sync_group, leader, _}} -> ok
     end,
     receive
-        {kamock_test_member, _, {sync_group, follower}} -> ok
+        {kamock_test_member, _, {sync_group, follower, _}} -> ok
     end,
 
     ?assertMatch(

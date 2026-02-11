@@ -7,7 +7,7 @@
 
 handle_describe_cluster_request(
     _DescribeClusterRequest = #{correlation_id := CorrelationId},
-    Env = #{cluster_id := ClusterId, node_ids := [ControllerId | _]}
+    Env = #{cluster_id := ClusterId, controller_id := ControllerId}
 ) ->
     % For some reason, the brokers in here use 'broker_id', rather than 'node_id'.
     Brokers = lists:map(

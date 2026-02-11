@@ -2,7 +2,12 @@
 -export([handle_join_group_request/2]).
 
 -export([member_id_required/2]).
--export([generate_member_id/1]).
+-export([
+    generate_member_id/1,
+    make_join_group_response/8,
+    make_join_group_response/7,
+    make_join_group_error/3
+]).
 -export([
     as_leader/0,
     as_leader/1,
@@ -10,7 +15,9 @@
 
     as_follower/0,
     as_follower/1,
-    as_follower/2
+    as_follower/2,
+
+    return_error/1
 ]).
 
 -include_lib("kafcod/include/error_code.hrl").
@@ -60,20 +67,13 @@ member_id_required(
     member_id_required(CorrelationId, GeneratedMemberId).
 
 member_id_required(CorrelationId, GeneratedMemberId) ->
-    #{
-        correlation_id => CorrelationId,
-        throttle_time_ms => 0,
-        error_code => ?MEMBER_ID_REQUIRED,
-        generation_id => -1,
-        protocol_type => <<>>,
-        protocol_name => <<>>,
-        leader => <<>>,
-        member_id => GeneratedMemberId,
-        members => []
-    }.
+    make_join_group_error(CorrelationId, ?MEMBER_ID_REQUIRED, GeneratedMemberId).
 
 generate_member_id(ClientId) ->
     Uuid = uuid:uuid_to_string(uuid:get_v4(), binary_standard),
+    generate_member_id(ClientId, Uuid).
+
+generate_member_id(ClientId, Uuid) when is_binary(ClientId), is_binary(Uuid) ->
     <<ClientId/binary, "-", Uuid/binary>>.
 
 as_leader() ->
@@ -149,13 +149,18 @@ as_follower(LeaderId, GenerationId) ->
             )
     end.
 
+return_error(ErrorCode) ->
+    fun(#{correlation_id := CorrelationId, member_id := MemberId}, _Env) ->
+        make_join_group_error(CorrelationId, ErrorCode, MemberId)
+    end.
+
 make_join_group_response(
-    CorrelationId, GenerationId, ProtocolType, ProtocolName, LeaderId, MemberId, Members
+    CorrelationId, ErrorCode, GenerationId, ProtocolType, ProtocolName, LeaderId, MemberId, Members
 ) ->
     #{
         correlation_id => CorrelationId,
         throttle_time_ms => 0,
-        error_code => ?NONE,
+        error_code => ErrorCode,
         generation_id => GenerationId,
         protocol_type => ProtocolType,
         protocol_name => ProtocolName,
@@ -163,3 +168,29 @@ make_join_group_response(
         member_id => MemberId,
         members => Members
     }.
+
+make_join_group_response(
+    CorrelationId, GenerationId, ProtocolType, ProtocolName, LeaderId, MemberId, Members
+) ->
+    make_join_group_response(
+        CorrelationId,
+        ?NONE,
+        GenerationId,
+        ProtocolType,
+        ProtocolName,
+        LeaderId,
+        MemberId,
+        Members
+    ).
+
+make_join_group_error(CorrelationId, ErrorCode, MemberId) ->
+    make_join_group_response(
+        CorrelationId,
+        ErrorCode,
+        -1,
+        <<>>,
+        <<>>,
+        <<>>,
+        MemberId,
+        []
+    ).

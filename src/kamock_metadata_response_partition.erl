@@ -1,7 +1,12 @@
 -module(kamock_metadata_response_partition).
--export([make_metadata_response_partition/2]).
--export([make_metadata_response_partition/3]).
--export([get_partition_leader/2]).
+-export([
+    make_metadata_response_partition/2,
+    make_metadata_response_partition/3
+]).
+-export([
+    get_partition_leader/2,
+    get_partition_leader/3
+]).
 
 -include_lib("kafcod/include/error_code.hrl").
 
@@ -22,5 +27,8 @@ make_metadata_response_partition(PartitionIndex, LeaderId, NodeIds) ->
     }.
 
 get_partition_leader(PartitionIndex, NodeIds) ->
-    Index = PartitionIndex rem length(NodeIds),
+    get_partition_leader(PartitionIndex, NodeIds, 0).
+
+get_partition_leader(PartitionIndex, NodeIds, Rotate) ->
+    Index = (PartitionIndex + Rotate) rem length(NodeIds),
     lists:nth(Index + 1, NodeIds).

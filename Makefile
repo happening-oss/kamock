@@ -8,6 +8,18 @@ compile:
 eunit:
 	rebar3 eunit
 
+lint:
+	rebar3 lint
+
+elvis: lint
+
+dialyzer:
+	rebar3 dialyzer
+
+eqwalize:: compile
+
+include eqwalizer.mk
+
 all: compile eunit
 
 GNU_TAR ?= gtar

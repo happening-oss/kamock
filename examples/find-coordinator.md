@@ -20,10 +20,10 @@ it's the coordinator:
 {ok, Cluster, [Bootstrap, Coordinator | _]} = kamock_cluster:start(make_ref(), [101, 102, 103]),
 
 meck:new(kamock_find_coordinator, [passthrough]),
-meck:expect(kamock_find_coordinator, handle_find_coordinator_request,
-    fun(_Req = #{correlation_id := CorrelationId}, _Env) ->
-        kamock_find_coordinator:make_find_coordinator_response(CorrelationId, Coordinator)
-    end
+meck:expect(
+    kamock_find_coordinator,
+    handle_find_coordinator_request,
+    kamock_find_coordinator:return(Coordinator)
 ).
 ```
 

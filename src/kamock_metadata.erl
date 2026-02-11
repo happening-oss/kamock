@@ -9,7 +9,7 @@
 
 handle_metadata_request(
     _MetadataRequest = #{correlation_id := CorrelationId, topics := Topics},
-    Env = #{cluster_id := ClusterId, node_ids := [ControllerId | _]}
+    Env = #{cluster_id := ClusterId, controller_id := ControllerId}
 ) ->
     Brokers = get_brokers(Env),
     #{

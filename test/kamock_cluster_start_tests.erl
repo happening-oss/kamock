@@ -3,18 +3,7 @@
 
 -define(CLUSTER_REF, {?MODULE, ?FUNCTION_NAME}).
 
-setup() ->
-    ok.
-
-cleanup(_) ->
-    ok.
-
-kamock_cluster_test_() ->
-    {foreach, fun setup/0, fun cleanup/1, [
-        fun start_stop/0
-    ]}.
-
-start_stop() ->
+start_stop_test() ->
     % There should be no listeners.
     ?assertEqual(#{}, kamock_broker:info()),
 

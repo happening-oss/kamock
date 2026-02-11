@@ -4,6 +4,7 @@
 % Creators
 -export([
     empty/0,
+    single/1,
     repeat/1,
     range/3,
     batches/4
@@ -86,6 +87,14 @@ If you want an empty partition at any other offset, use `range` with `FirstOffse
 """).
 empty() ->
     fun empty_partition/3.
+
+?DOC("""
+Pretend to be a partition with a single message at offset zero.
+""").
+-spec single(Message :: message() | message_builder_fun()) -> partition_data_fun().
+
+single(MessageOrBuilder) ->
+    range(0, 1, MessageOrBuilder).
 
 -spec repeat(Message :: message() | message_builder_fun()) -> partition_data_fun().
 
@@ -201,9 +210,9 @@ batches(FirstOffset, LastOffset, BatchLocator, MessageBuilder) when
             ),
 
             % Then we make the batch.
-            LastOffsetDelta = BatchSize,
+            LastOffsetDelta = BatchSize - 1,
 
-            MessageOffsets = lists:seq(BaseOffset, BaseOffset + LastOffsetDelta - 1),
+            MessageOffsets = lists:seq(BaseOffset, BaseOffset + LastOffsetDelta),
             Records = make_records([
                 MessageBuilder(Topic, PartitionIndex, MessageOffset)
              || MessageOffset <- MessageOffsets

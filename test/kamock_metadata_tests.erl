@@ -9,11 +9,13 @@
 all_test_() ->
     {foreach, fun setup/0, fun cleanup/1, [
         fun broker_includes_self/0,
-        fun cluster_metadata/0,
         fun default_no_topics/0,
         fun named_topic_appears/0,
         fun with_topics/0,
         fun number_of_partitions/0,
+        fun number_of_partitions_varies/0,
+        fun number_of_partitions_varies_2/0,
+        fun number_of_partitions_varies_3/0,
         fun unknown_topic_or_partition/0,
         fun partitions_move/0
     ]}.
@@ -52,45 +54,12 @@ broker_includes_self() ->
     kamock_broker:stop(Broker),
     ok.
 
-cluster_metadata() ->
-    % In this test, we'll override the cluster ID. In the later tests, we'll leave it as the default.
-    ClusterId = <<"koEzdSygYpmF">>,
-    {ok, Cluster, Brokers = [Bootstrap | _]} = kamock_cluster:start(
-        ?CLUSTER_REF, [101, 102, 103], #{cluster_id => ClusterId}
-    ),
-    {ok, Connection} = kafcod_connection:start_link(Bootstrap),
-
-    ControllerId = maps:get(node_id, Bootstrap),
-    ExpectedBrokers = [maps:with([host, port, node_id, rack], B) || B <- Brokers],
-    ?assertMatch(
-        {ok, #{
-            cluster_id := ClusterId,
-            controller_id := ControllerId,
-            brokers := ExpectedBrokers
-        }},
-        kafcod_connection:call(
-            Connection,
-            fun metadata_request:encode_metadata_request_9/1,
-            #{
-                topics => null,
-                allow_auto_topic_creation => false,
-                include_cluster_authorized_operations => false,
-                include_topic_authorized_operations => false
-            },
-            fun metadata_response:decode_metadata_response_9/1
-        )
-    ),
-
-    kafcod_connection:stop(Connection),
-    kamock_cluster:stop(Cluster),
-    ok.
-
 default_no_topics() ->
-    {ok, Cluster, Brokers = [Bootstrap | _]} = kamock_cluster:start(?CLUSTER_REF, [101, 102, 103]),
-    {ok, Connection} = kafcod_connection:start_link(Bootstrap),
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+    {ok, Connection} = kafcod_connection:start_link(Broker),
 
-    ControllerId = maps:get(node_id, Bootstrap),
-    ExpectedBrokers = [maps:with([host, port, node_id, rack], B) || B <- Brokers],
+    ControllerId = maps:get(node_id, Broker),
+    ExpectedBrokers = [maps:with([host, port, node_id, rack], Broker)],
     ?assertMatch(
         {ok, #{
             topics := [],
@@ -112,7 +81,7 @@ default_no_topics() ->
     ),
 
     kafcod_connection:stop(Connection),
-    kamock_cluster:stop(Cluster),
+    kamock_broker:stop(Broker),
     ok.
 
 named_topic_appears() ->
@@ -182,7 +151,7 @@ number_of_partitions() ->
     meck:expect(
         kamock_metadata_response_topic,
         make_metadata_response_topic,
-        kamock_metadata_response_topic:partitions(lists:seq(0, 63))
+        kamock_metadata_response_topic:partitions(64)
     ),
 
     {ok, #{
@@ -205,6 +174,134 @@ number_of_partitions() ->
 
     ?assertEqual(64, length(PCat)),
     ?assertEqual(64, length(PDog)),
+
+    kafcod_connection:stop(Connection),
+    kamock_broker:stop(Broker),
+    ok.
+
+number_of_partitions_varies() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+    {ok, Connection} = kafcod_connection:start_link(Broker),
+
+    meck:expect(
+        kamock_metadata,
+        handle_metadata_request,
+        kamock_metadata:with_topics([<<"cats">>, <<"dogs">>])
+    ),
+
+    meck:expect(
+        kamock_metadata_response_topic,
+        make_metadata_response_topic,
+        fun
+            (Topic = #{name := <<"cats">>}, Env) ->
+                kamock_metadata_response_topic:make_metadata_response_topic(Topic, 8, Env);
+            (Topic, Env) ->
+                meck:passthrough([Topic, Env])
+        end
+    ),
+
+    {ok, #{
+        topics := [
+            #{name := <<"cats">>, partitions := PCat},
+            #{name := <<"dogs">>, partitions := PDog}
+        ]
+    }} =
+        kafcod_connection:call(
+            Connection,
+            fun metadata_request:encode_metadata_request_9/1,
+            #{
+                topics => null,
+                allow_auto_topic_creation => false,
+                include_cluster_authorized_operations => false,
+                include_topic_authorized_operations => false
+            },
+            fun metadata_response:decode_metadata_response_9/1
+        ),
+
+    ?assertEqual(8, length(PCat)),
+    ?assertEqual(4, length(PDog)),
+
+    kafcod_connection:stop(Connection),
+    kamock_broker:stop(Broker),
+    ok.
+
+number_of_partitions_varies_2() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+    {ok, Connection} = kafcod_connection:start_link(Broker),
+
+    meck:expect(
+        kamock_metadata,
+        handle_metadata_request,
+        kamock_metadata:with_topics([<<"cats">>, <<"dogs">>])
+    ),
+
+    meck:expect(
+        kamock_metadata_response_topic,
+        make_metadata_response_topic,
+        kamock_metadata_response_topic:partitions(#{<<"cats">> => 8})
+    ),
+
+    {ok, #{
+        topics := [
+            #{name := <<"cats">>, partitions := PCat},
+            #{name := <<"dogs">>, partitions := PDog}
+        ]
+    }} =
+        kafcod_connection:call(
+            Connection,
+            fun metadata_request:encode_metadata_request_9/1,
+            #{
+                topics => null,
+                allow_auto_topic_creation => false,
+                include_cluster_authorized_operations => false,
+                include_topic_authorized_operations => false
+            },
+            fun metadata_response:decode_metadata_response_9/1
+        ),
+
+    ?assertEqual(8, length(PCat)),
+    ?assertEqual(4, length(PDog)),
+
+    kafcod_connection:stop(Connection),
+    kamock_broker:stop(Broker),
+    ok.
+
+number_of_partitions_varies_3() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+    {ok, Connection} = kafcod_connection:start_link(Broker),
+
+    meck:expect(
+        kamock_metadata,
+        handle_metadata_request,
+        kamock_metadata:with_topics([<<"cats">>, <<"dogs">>])
+    ),
+
+    meck:expect(
+        kamock_metadata_response_topic,
+        make_metadata_response_topic,
+        kamock_metadata_response_topic:partitions(#{<<"cats">> => 8}, 1)
+    ),
+
+    {ok, #{
+        topics := [
+            #{name := <<"cats">>, partitions := PCat},
+            #{name := <<"dogs">>, partitions := PDog}
+        ]
+    }} =
+        kafcod_connection:call(
+            Connection,
+            fun metadata_request:encode_metadata_request_9/1,
+            #{
+                topics => null,
+                allow_auto_topic_creation => false,
+                include_cluster_authorized_operations => false,
+                include_topic_authorized_operations => false
+            },
+            fun metadata_response:decode_metadata_response_9/1
+        ),
+
+    ?assertEqual(8, length(PCat)),
+    ?assertEqual(1, length(PDog)),
 
     kafcod_connection:stop(Connection),
     kamock_broker:stop(Broker),

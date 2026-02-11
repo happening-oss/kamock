@@ -65,11 +65,16 @@ fetch_batch_at_zero() ->
         records := [
             #{
                 base_offset := 0,
+                last_offset_delta := 2,
                 records := Records
             }
         ]
     } = PartitionResponse,
-    [#{key := <<"key-0-0">>}, #{key := <<"key-0-1">>}, #{key := <<"key-0-2">>}] = Records,
+    [
+        #{key := <<"key-0-0">>, offset_delta := 0},
+        #{key := <<"key-0-1">>, offset_delta := 1},
+        #{key := <<"key-0-2">>, offset_delta := 2}
+    ] = Records,
 
     kafcod_connection:stop(C),
     kamock_broker:stop(Broker),
@@ -108,11 +113,16 @@ fetch_batch_mid_batch() ->
         records := [
             #{
                 base_offset := 3,
+                last_offset_delta := 2,
                 records := Records
             }
         ]
     } = PartitionResponse,
-    [#{key := <<"key-0-3">>}, #{key := <<"key-0-4">>}, #{key := <<"key-0-5">>}] = Records,
+    [
+        #{key := <<"key-0-3">>, offset_delta := 0},
+        #{key := <<"key-0-4">>, offset_delta := 1},
+        #{key := <<"key-0-5">>, offset_delta := 2}
+    ] = Records,
 
     kafcod_connection:stop(C),
     kamock_broker:stop(Broker),
@@ -210,7 +220,7 @@ fetch_batch_not_multiple_mid_last_batch() ->
         kamock_partition_data:batches(0, 14, 3, fun message_builder/3)
     ),
 
-    % Issue a fetch request with an offset that falls at the end of the topic, we should get an empty response.
+    % Issue a fetch request with an offset that falls within the last batch; we should get the last batch.
     Topic = ?TOPIC_NAME,
     FetchRequest = kamock_fetch_request:build_fetch_request(Topic, #{0 => 13}),
 

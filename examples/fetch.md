@@ -7,11 +7,11 @@ completely-empty partition.
 
 ```erlang
 % Start the mock broker, as usual.
-kamock_broker:start(make_ref(), #{port => 9292}).
+kamock_broker:start(make_ref(), #{port => 9990}).
 ```
 
 ```
-$ kcat -b localhost:9292 -C -t cars -e
+$ kcat -b localhost:9990 -C -t cars -e
 % Reached end of topic cars [0] at offset 0
 % Reached end of topic cars [1] at offset 0
 % Reached end of topic cars [2] at offset 0
@@ -23,6 +23,13 @@ $ kcat -b localhost:9292 -C -t cars -e
 ```erlang
 meck:expect(kamock_partition_data, make_partition_data,
     kamock_partition_data:empty()).
+```
+
+## Single message
+
+```erlang
+meck:expect(kamock_partition_data, make_partition_data,
+    kamock_partition_data:single(#{key => <<"key">>, value => <<"value">>})).
 ```
 
 ## Infinitely long partition
@@ -40,7 +47,7 @@ meck:expect(kamock_partition_data, make_partition_data,
 ```
 
 ```
-$ kcat -b localhost:9292 -C -t cars
+$ kcat -b localhost:9990 -C -t cars
 value-0-0
 value-1-0
 value-1-1
@@ -75,3 +82,14 @@ meck:expect(kamock_partition_data, make_partition_data, [
 If you want to mock a fixed-length partition that starts at a non-zero offset, you can use
 `kamock_partition_data:range(11662, 11668, MessageBuilder)`. You will also need to mock the `ListOffsets` call; see
 [list-offsets.md](list-offsets.md).
+
+## Topic not found
+
+If you want to return `UNKNOWN_TOPIC_OR_PARTITION`, then you need to replace the default behaviour.
+
+```erlang
+meck:expect(kamock_partition_data, make_partition_data,
+    fun(_Topic, #{partition := P}, _Env) ->
+        kamock_partition_data:make_error(P, 3)
+    end).
+```

@@ -2,6 +2,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
+-define(BROKER_REF, {?MODULE, ?FUNCTION_NAME}).
+
 client_cert_test() ->
     CAKey = erl509_private_key:create_rsa(4096),
     CACert = erl509_certificate:create_self_signed(
@@ -14,8 +16,7 @@ client_cert_test() ->
         ServerPub, <<"CN=localhost">>, CACert, CAKey, erl509_certificate_template:server()
     ),
 
-    Ref = make_ref(),
-    {ok, Broker} = kamock_broker:start_tls(Ref, #{}, [
+    {ok, Broker} = kamock_broker:start_tls(?BROKER_REF, #{}, [
         {cert, erl509_certificate:to_der(ServerCert)},
         {key, {'RSAPrivateKey', erl509_private_key:to_der(ServerKey)}},
         % Client certs are optional.
@@ -37,20 +38,15 @@ client_cert_test() ->
         {cert, erl509_certificate:to_der(ClientCert)},
         {key, {'RSAPrivateKey', erl509_private_key:to_der(ClientKey)}},
         {verify, verify_peer},
-        {cacerts, [erl509_certificate:to_der(CACert)]},
-        {verify, verify_none}
+        {cacerts, [erl509_certificate:to_der(CACert)]}
     ]),
 
     [#{transport := ranch_ssl, socket := SslSocket}] = kamock_broker:connections(Broker),
     {ok, PeerCertDer} = ssl:peercert(SslSocket),
-    #'OTPCertificate'{
-        tbsCertificate = #'OTPTBSCertificate'{
-            subject = PeerSubject
-        }
-    } = public_key:pkix_decode_cert(PeerCertDer, otp),
+    PeerSubject = get_peer_subject_rdn(PeerCertDer),
     ?assertEqual(
         {rdnSequence, [
-            [{'AttributeTypeAndValue', ?'id-at-commonName', {printableString, "client"}}]
+            [{'AttributeTypeAndValue', ?'id-at-commonName', {utf8String, <<"client">>}}]
         ]},
         PeerSubject
     ),
@@ -58,3 +54,11 @@ client_cert_test() ->
     ok = ssl:close(S),
     kamock_broker:stop(Broker),
     ok.
+
+get_peer_subject_rdn(PeerCertDer) ->
+    #'OTPCertificate'{
+        tbsCertificate = #'OTPTBSCertificate'{
+            subject = PeerSubject
+        }
+    } = public_key:pkix_decode_cert(PeerCertDer, otp),
+    PeerSubject.

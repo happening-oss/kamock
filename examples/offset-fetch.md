@@ -6,7 +6,7 @@ To change this, do the following:
 
 ```erlang
 % Start the mock broker, as usual.
-kamock_broker:start(make_ref(), #{port => 9292}).
+kamock_broker:start(make_ref(), #{port => 9990}).
 ```
 
 ```erlang
@@ -27,7 +27,7 @@ Note that the above only works in compiled code, because it needs the `?NONE` ma
 Then, when you use `kcat`, for example:
 
 ```
-$ kcat -b localhost:9292 -G group cars
+$ kcat -b localhost:9990 -G group cars
 ```
 
 ...it will start fetching from offset 27317, rather than zero. To see any output, you'll also need to mock the `Fetch`
@@ -45,3 +45,24 @@ value-3-27317
 
 Note that `OffsetCommit` requests are silently ignored, so if you restart the client, it will start from the beginning
 again. See [offset-commit.md](offset-commit.md) for details.
+
+## Errors
+
+You can return an error like so:
+
+```erlang
+meck:expect(kamock_offset_fetch, handle_offset_fetch_request, kamock_offset_fetch:return_error(?NOT_COORDINATOR)).
+```
+
+Or to correctly implement NOT_COORDINATOR behaviour:
+
+```erlang
+meck:expect(
+    kamock_offset_fetch,
+    handle_offset_fetch_request,
+    [
+        {['_', #{node_id => CoordinatorNodeId}], meck:passthrough()},
+        {['_', '_'], kamock_offset_fetch:return_error(?NOT_COORDINATOR)}
+    ]
+).
+```

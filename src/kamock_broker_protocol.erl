@@ -8,7 +8,8 @@
 -export([
     init/1,
     callback_mode/0,
-    handle_event/4
+    handle_event/4,
+    terminate/3
 ]).
 -export([
     connection_info/1
@@ -41,6 +42,8 @@ callback_mode() ->
 }).
 
 init([Ref, Transport, _Opts = #{handler := Handler, env := Env}]) ->
+    process_flag(trap_exit, true),
+
     #{node_id := NodeId} = Env,
     StateData = #state{
         ref = Ref,
@@ -113,17 +116,20 @@ handle_event(
     {call, From},
     connection_info,
     _State,
-    _StateData = #state{transport = Transport, socket = Socket}
+    _StateData = #state{transport = Transport, socket = Socket, env = Env}
 ) ->
-    {keep_state_and_data, [{reply, From, #{transport => Transport, socket => Socket}}]}.
+    % We return the transport and socket, so that you can use ssl:connection_info to get cert information, etc.
+    % We return 'env', because it contains 'principal' if the user is authenticated.
+    Info = #{transport => Transport, socket => Socket, env => Env},
+    {keep_state_and_data, [{reply, From, Info}]}.
 
 handle_request_result(
-    {reply, Reply},
+    {reply, Reply, Env2},
     _State,
-    _StateData = #state{transport = Transport, socket = Socket}
+    StateData = #state{transport = Transport, socket = Socket}
 ) ->
     Transport:send(Socket, Reply),
-    keep_state_and_data;
+    {keep_state, StateData#state{env = Env2}};
 handle_request_result(
     noreply,
     _State,
@@ -131,11 +137,20 @@ handle_request_result(
 ) ->
     keep_state_and_data;
 handle_request_result(
+    stop,
+    _State,
+    _StateData
+) ->
+    stop;
+handle_request_result(
     {stop, Reason},
     _State,
     _StateData
 ) ->
     {stop, Reason}.
+
+terminate(_Reason, _, _StateData) ->
+    ok.
 
 connection_info(Pid) ->
     gen_statem:call(Pid, connection_info).

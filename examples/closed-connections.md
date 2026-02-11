@@ -5,7 +5,7 @@ Similar to [dropped-requests.md](dropped-requests.md), you can cause kamock to d
 First, we set up the usual stream of single messages. See [fetch.md](fetch.md) for similar examples.
 
 ```erlang
-kamock_broker:start(make_ref(), #{port => 9292}).
+kamock_broker:start(make_ref(), #{port => 9990}).
 
 MessageBuilder = fun(_Topic, Partition, Offset) ->
                  Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
@@ -27,10 +27,13 @@ meck:expect(kamock_broker_handler, handle_request,
             [?FETCH, '_', '_', '_'],
             meck:seq([
                 meck:seq([meck:passthrough() || _ <- lists:seq(1, 10)]),
-                meck:exec(fun(_, _, _, _) -> {stop, closed} end),
+                meck:exec(fun(_, _, _, _) -> stop end),
                 meck:loop([meck:passthrough()])
             ])
         },
         {['_', '_', '_', '_'], meck:passthrough()}
     ]).
 ```
+
+As an alternative, you can return `{stop, Reason}`, which will result in the mock broker connection crashing noisily.
+I'm not sure why you'd want that, but it's an option.

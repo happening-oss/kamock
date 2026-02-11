@@ -5,9 +5,11 @@ This example uses kafta; see https://github.com/electric-saw/kafta. You'll need 
 
 ## Configure kafta
 
+`kcat` doesn't support `DescribeConfigs`, so we use `kafta`.
+
 ```
 kafta config set-context kamock \
-    --server localhost:9292 \
+    --server localhost:9990 \
     --sasl false \
     --tls false \
     --schema-registry ''

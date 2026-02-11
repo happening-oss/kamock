@@ -134,7 +134,7 @@ handle_join_group_response(
 ) when LeaderId =:= MemberId ->
     % We're the leader; do some assigning; send SyncGroup.
     ?LOG_DEBUG("~s: leader", [StateData#state.member_id]),
-    Assignments = assign(Topics, Members),
+    Assignments = kamock_test_assignor:assign(Topics, Members),
     SyncGroupRequest = #{
         group_id => GroupId,
         generation_id => GenerationId,
@@ -191,12 +191,13 @@ handle_join_group_response(
     ).
 
 handle_sync_group_response(
-    {ok, #{error_code := ?NONE}},
+    {ok, #{error_code := ?NONE, assignment := Assignment0}},
     Role,
-    StateData = #state{owner = Owner}
+    StateData = #state{member_id = MemberId, owner = Owner}
 ) ->
     ?LOG_DEBUG("~s: sync_group", [StateData#state.member_id]),
-    Owner ! {kamock_test_member, self(), {sync_group, Role}},
+    Assignment = kafcod_consumer_protocol:decode_assignment(Assignment0),
+    Owner ! {kamock_test_member, self(), {sync_group, Role, {MemberId, Assignment}}},
     loop(StateData).
 
 loop(StateData = #state{connection = Connection}) ->
@@ -290,16 +291,3 @@ make_join_group_request(
         rebalance_timeout_ms => RebalanceTimeoutMs,
         session_timeout_ms => SessionTimeoutMs
     }.
-
-assign(Topics, Members) ->
-    % Naively; give the first member everything; give everyone else nothing.
-    [#{member_id := MemberId} | _] = Members,
-    AssignedPartitions = lists:foldl(
-        fun(Topic, Acc) ->
-            PartitionIndexes = [0, 1, 2, 3],
-            Acc#{Topic => PartitionIndexes}
-        end,
-        #{},
-        Topics
-    ),
-    #{MemberId => #{assigned_partitions => AssignedPartitions, user_data => <<>>}}.

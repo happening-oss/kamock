@@ -38,6 +38,17 @@ rebar3 as test shell
 
 We use `rebar3 as test ...` to use the `test` profile. This makes sure that `meck` is available; see `rebar.config`.
 
+## Ad-hoc testing with reasonable configuration
+
+This is useful when doing ad-hoc testing:
+
+```erlang
+% Starts a fake 3-node cluster, with a group coordinator and ETS-backed topics.
+kamock:quick_start().
+```
+
+The enabled features are subject to change, so don't use it in unit tests -- be more explicit.
+
 ## Starting the broker
 
 ```erlang
@@ -51,7 +62,7 @@ follows:
 
 ```erlang
 Ref = make_ref().
-Options = #{port => 9292}.
+Options = #{port => 9990}.
 {ok, Broker} = kamock_broker:start(Ref, Options).
 ```
 
@@ -60,6 +71,18 @@ To stop the mock broker:
 ```erlang
 kamock_broker:stop(Broker).
 ```
+
+## Use with `kcat`
+
+In case it's not obvious, `kamock` actually listens on a TCP port, so you can use it as a "real" broker. For example:
+
+```sh
+kcat -b localhost:9990 -L -t example
+```
+
+## Use with `kafta`
+
+See [kafta.md](examples/kafta.md).
 
 ## Defaults
 
@@ -79,6 +102,14 @@ To change the mock broker's behaviour, it's expected that you'll use `meck`; see
 various helper functions to make this easier.  Examples are in the `examples` directory and in the mock broker's own
 unit tests.
 
+In particular, you might be interested in the following functionality:
+
+- **Group Coordinator**: By default, `kamock` supports a single group with a single member (the leader). If you want a
+  more full-featured group coordinator, see [examples/coordinator.md](examples/coordinator.md).
+- **ETS-backed topics**: It's kinda complicated to fake messages that are fetched, and you have to use `meck` to check
+  that messages are produced correctly. To make this easier, `kamock` provides ETS-backed topics, so that you can
+  Produce and Fetch normally. See [examples/ets.md](examples/ets.md).
+
 ## Starting a cluster
 
 ```erlang
@@ -94,7 +125,7 @@ By default, all of the brokers in the cluster listen on randomly-assigned ports.
 number for the "bootstrap" broker:
 
 ```erlang
-{ok, Cluster, [Broker | _]} = kamock_cluster:start(Ref, [101, 102, 103], #{port => 9292}),
+{ok, Cluster, [Broker | _]} = kamock_cluster:start(Ref, [101, 102, 103], #{port => 9990}),
 ```
 
 To stop the cluster and all of the brokers:

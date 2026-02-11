@@ -60,7 +60,7 @@ The mock broker doesn't care about the group name. For example, here's `kcat` jo
 assignments above):
 
 ```
-$ kcat -b localhost:9292 -G foo cars
+$ kcat -b localhost:9990 -G foo cars
 % Waiting for group rebalance
 % Group foo rebalanced (memberid rdkafka-837c298c-6291-41fe-a936-34cafaba9351): assigned: cars [0], cars [1]
 % Reached end of topic cars [0] at offset 0
@@ -68,7 +68,7 @@ $ kcat -b localhost:9292 -G foo cars
 ```
 
 ```
-$ kcat -b localhost:9292 -G bar cars
+$ kcat -b localhost:9990 -G bar cars
 % Waiting for group rebalance
 % Group bar rebalanced (memberid rdkafka-4437c8da-3e30-47d3-bad8-ff69d314e283): assigned: cars [2], cars [3]
 % Reached end of topic cars [2] at offset 0
@@ -107,4 +107,25 @@ meck:expect(kamock_sync_group, handle_sync_group_request, [
         kamock_sync_group:assign([#{topic => <<"cars">>, partitions => [2, 3]}])
     }
 ]).
+```
+
+## Errors
+
+You can return an error like so:
+
+```erlang
+meck:expect(kamock_join_group, handle_join_group_request, kamock_join_group:return_error(?NOT_COORDINATOR)).
+```
+
+Or to correctly implement NOT_COORDINATOR behaviour:
+
+```erlang
+meck:expect(
+    kamock_join_group,
+    handle_join_group_request,
+    [
+        {['_', #{node_id => CoordinatorNodeId}], meck:passthrough()},
+        {['_', '_'], kamock_join_group:return_error(?NOT_COORDINATOR)}
+    ]
+).
 ```

@@ -36,11 +36,13 @@ handle_api_versions_request(#{correlation_id := CorrelationId}, _Env) ->
             #{api_key => ?METADATA, min_version => 0, max_version => 12},
             #{api_key => ?FIND_COORDINATOR, min_version => 0, max_version => 3},
             #{api_key => ?OFFSET_COMMIT, min_version => 0, max_version => 8},
-            #{api_key => ?OFFSET_FETCH, min_version => 0, max_version => 4},
+            #{api_key => ?OFFSET_FETCH, min_version => 0, max_version => 7},
             #{api_key => ?JOIN_GROUP, min_version => 0, max_version => 7},
             #{api_key => ?HEARTBEAT, min_version => 0, max_version => 4},
             #{api_key => ?LEAVE_GROUP, min_version => 0, max_version => 4},
             #{api_key => ?SYNC_GROUP, min_version => 0, max_version => 5},
-            #{api_key => ?API_VERSIONS, min_version => 0, max_version => 3}
+            #{api_key => ?SASL_HANDSHAKE, min_version => 0, max_version => 1},
+            #{api_key => ?API_VERSIONS, min_version => 0, max_version => 3},
+            #{api_key => ?SASL_AUTHENTICATE, min_version => 0, max_version => 1}
         ]
     }.

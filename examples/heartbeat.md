@@ -41,3 +41,24 @@ meck:expect(kamock_join_group, handle_join_group_request,
 meck:expect(kamock_heartbeat, handle_heartbeat_request,
     kamock_heartbeat:expect_generation_id(1)).
 ```
+
+## Errors
+
+You can return an error like so:
+
+```erlang
+meck:expect(kamock_heartbeat, handle_heartbeat_request, kamock_heartbeat:return_error(?NOT_COORDINATOR)).
+```
+
+Or to correctly implement NOT_COORDINATOR behaviour:
+
+```erlang
+meck:expect(
+    kamock_heartbeat,
+    handle_heartbeat_request,
+    [
+        {['_', #{node_id => CoordinatorNodeId}], meck:passthrough()},
+        {['_', '_'], kamock_heartbeat:return_error(?NOT_COORDINATOR)}
+    ]
+).
+```

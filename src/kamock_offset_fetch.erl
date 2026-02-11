@@ -1,6 +1,9 @@
 -module(kamock_offset_fetch).
 -export([handle_offset_fetch_request/2]).
--export([from_ets/1]).
+-export([
+    from_ets/1,
+    return_error/1
+]).
 
 -include_lib("kafcod/include/error_code.hrl").
 
@@ -35,6 +38,11 @@ from_ets(Table) ->
         }
     end.
 
+return_error(ErrorCode) ->
+    fun(_Req = #{correlation_id := CorrelationId}, _Env) ->
+        error_response(CorrelationId, ErrorCode)
+    end.
+
 topic_from_ets(Table, GroupId, #{name := TopicName, partition_indexes := PartitionIndexes}) ->
     #{
         name => TopicName,
@@ -55,6 +63,7 @@ partition_from_ets_result(PartitionIndex, []) ->
     #{
         partition_index => PartitionIndex,
         committed_offset => -1,
+        committed_leader_epoch => -1,
         % 'metadata' is a nullable string, but a real broker returns an empty string for unknown/new commits, so we'll
         % do that.
         metadata => <<>>,
@@ -64,6 +73,15 @@ partition_from_ets_result(PartitionIndex, [{_, {CommittedOffset, CommittedMetada
     #{
         partition_index => PartitionIndex,
         committed_offset => CommittedOffset,
+        committed_leader_epoch => -1,
         metadata => CommittedMetadata,
         error_code => ?NONE
+    }.
+
+error_response(CorrelationId, ErrorCode) ->
+    #{
+        correlation_id => CorrelationId,
+        error_code => ErrorCode,
+        throttle_time_ms => 0,
+        topics => []
     }.

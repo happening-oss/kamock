@@ -21,6 +21,7 @@ cleanup(_) ->
 all_test_() ->
     {foreach, fun setup/0, fun cleanup/1, [
         fun empty_topic/0,
+        fun single_message_range_on_single_partition/0,
         fun single_message_on_single_partition/0,
         fun not_leader_or_follower/0
     ]}.
@@ -28,7 +29,7 @@ all_test_() ->
 empty_topic() ->
     {ok, Broker} = kamock_broker:start(?BROKER_REF),
 
-    % Explicitly empty.
+    % Defaults to empty anyway, but we'll be explicit.
     meck:expect(kamock_partition_data, make_partition_data, kamock_partition_data:empty()),
 
     Topic = ?TOPIC_NAME,
@@ -62,7 +63,7 @@ empty_topic() ->
     kamock_broker:stop(Broker),
     ok.
 
-single_message_on_single_partition() ->
+single_message_range_on_single_partition() ->
     {ok, Broker} = kamock_broker:start(?BROKER_REF),
 
     % After writing all of that complicated meck stuff, I realised that because the client tracks the offset, it could
@@ -76,6 +77,32 @@ single_message_on_single_partition() ->
         {
             ['_', meck:is(fun(#{partition := P}) -> P == 0 end), '_'],
             kamock_partition_data:range(0, 1, MessageBuilder)
+        },
+        {['_', '_', '_'], kamock_partition_data:empty()}
+    ]),
+
+    {ok, C} = kafcod_connection:start_link(Broker),
+
+    assert_single_message(C),
+
+    kafcod_connection:stop(C),
+    kamock_broker:stop(Broker),
+    ok.
+
+single_message_on_single_partition() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+
+    % After writing all of that complicated meck stuff, I realised that because the client tracks the offset, it could
+    % be replaced with the following:
+    MessageBuilder = fun(_Topic, Partition, Offset) ->
+        Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
+        Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
+        #{key => Key, value => Value}
+    end,
+    meck:expect(kamock_partition_data, make_partition_data, [
+        {
+            ['_', meck:is(fun(#{partition := P}) -> P == 0 end), '_'],
+            kamock_partition_data:single(MessageBuilder)
         },
         {['_', '_', '_'], kamock_partition_data:empty()}
     ]),

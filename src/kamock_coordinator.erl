@@ -27,9 +27,10 @@
 
 -define(DEFAULT_INITIAL_REBALANCE_DELAY_MS, 3_000).
 
-% The intention is that you'd have one of these per group. If you need more, use meck:is(), or invent a something that
-% sits in front of this one and associates a group name with a coordinator pid (hook find_coordinator to start it,
-% e.g.).
+% By default, the coordinator doesn't care about the group name. If you want to support multiple groups; see
+% kamock_coordinator_multiple_groups_tests.erl for an example using meck:is to steer the requests to specific
+% coordinators.
+
 -record(state, {
     options,
     generation_id,
@@ -45,17 +46,18 @@ start(Ref) ->
 start(_Ref, Options) ->
     gen_statem:start(?MODULE, [maps:merge(default_options(), Options)], start_options()).
 
--ifndef(ENABLE_TRACING).
-start_options() -> [].
--else.
 start_options() ->
+    start_options(os:getenv("KAMOCK_TRACE")).
+
+start_options(false) ->
+    [];
+start_options(_) ->
     TFun = fun(X, Y, State) ->
         ?LOG_DEBUG("~p ~p", [X, Y]),
         State
     end,
     TState = undefined,
     [{debug, [{install, {?MODULE, {TFun, TState}}}]}].
--endif.
 
 default_options() ->
     #{
@@ -114,9 +116,8 @@ handle_event(
     }
 ) ->
     #{member_id := MemberId} = JoinGroupRequest,
-    ?LOG_DEBUG("join_group (leader ~s)", [MemberId]),
+    ?LOG_DEBUG("join_group (~s)", [MemberId]),
     trace(join_group),
-    % First one in is the leader.
     Joiner = {From, JoinGroupRequest},
     StateData2 = StateData#state{session_timeout_ms = SessionTimeoutMs},
     {next_state, {joining, [Joiner]}, StateData2, [
@@ -124,7 +125,7 @@ handle_event(
     ]};
 handle_event({call, From}, {join_group, JoinGroupRequest}, {joining, Joiners}, StateData) ->
     #{member_id := MemberId} = JoinGroupRequest,
-    ?LOG_DEBUG("join_group (follower ~s)", [MemberId]),
+    ?LOG_DEBUG("join_group (~s)", [MemberId]),
     trace(join_group),
     Joiner = {From, JoinGroupRequest},
     {next_state, {joining, [Joiner | Joiners]}, StateData};
@@ -138,20 +139,19 @@ handle_event(
     trace(initial_rebalance),
     % Rebalance over. Notify everyone.
     GenerationId2 = GenerationId + 1,
-    % Naive election: pick the first joiner as leader.
-    % Note that a real broker would remember the previous leader and use them again, if they're joining again.
-    % * We assume that all members have provided _exactly_ the same list of protocols. *
-    [Leader | Followers] = Joiners,
+
+    {Leader, Followers} = kamock_coordinator_election:elect(Joiners),
     {_, #{member_id := LeaderId}} = Leader,
 
     Members = lists:map(
         fun(
             _Joiner =
-                {_MemberPid, _Member = #{
-                    member_id := MemberId,
-                    group_instance_id := GroupInstanceId,
-                    protocols := [Protocol | _]
-                }}
+                {_MemberPid,
+                    _Member = #{
+                        member_id := MemberId,
+                        group_instance_id := GroupInstanceId,
+                        protocols := [Protocol | _]
+                    }}
         ) ->
             #{metadata := Metadata} = Protocol,
             #{
@@ -171,7 +171,9 @@ handle_event(
         Followers
     ),
     % TODO: Start timers for each member -- if they don't SyncGroup, we need another rebalance.
-    StateData2 = StateData#state{generation_id = GenerationId2, leader_id = LeaderId, members = Members},
+    StateData2 = StateData#state{
+        generation_id = GenerationId2, leader_id = LeaderId, members = Members
+    },
     {next_state, await_sync, StateData2, Replies};
 handle_event(
     {timeout, initial_rebalance},
@@ -230,7 +232,9 @@ handle_event(
 ) ->
     ?LOG_DEBUG("sync_group (member ~s)", [MemberId]),
     trace(sync_group),
-    % If this member doesn't appear in the leader's assignments, return <<>>. Verified with a real broker.
+    % The leader should pass us assignments containing at least itself; followers pass empty assignments.
+    % Either way, if the member doesn't appear in the assignments, return <<>>.
+    % Verified with a real broker and a slightly broken custom assignor.
     Assignment =
         case lists:search(fun(#{member_id := M}) -> M == MemberId end, Assignments) of
             {value, #{assignment := A}} -> A;

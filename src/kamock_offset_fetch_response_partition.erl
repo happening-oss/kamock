@@ -7,6 +7,7 @@ make_offset_fetch_response_partition(_TopicName, PartitionIndex, _Env) ->
     #{
         partition_index => PartitionIndex,
         committed_offset => -1,
+        committed_leader_epoch => -1,
         % 'metadata' is a nullable string, but a real broker returns an empty string for unknown/new commits, so we'll
         % do that.
         metadata => <<>>,

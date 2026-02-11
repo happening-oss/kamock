@@ -5,7 +5,7 @@ following (also see [fetch.md](fetch.md)):
 
 ```erlang
 % Start the mock broker, as usual.
-kamock_broker:start(make_ref(), #{port => 9292}).
+kamock_broker:start(make_ref(), #{port => 9990}).
 ```
 
 ## Default
@@ -43,7 +43,7 @@ meck:expect(kamock_partition_data, make_partition_data,
 ```
 
 ```
-$ kcat -b localhost:9292 -C -t cars -f "%t [%p] at offset %o: %k = %s\n" -e
+$ kcat -b localhost:9990 -C -t cars -f "%t [%p] at offset %o: %k = %s\n" -e
 % Reached end of topic cars [0] at offset 12576
 % Reached end of topic cars [1] at offset 12576
 % Reached end of topic cars [2] at offset 12576
@@ -120,7 +120,7 @@ Nothing in the mock broker forces you to use matching ranges here. In fact, if y
 outside the lines, you could just use `kamock_partition_data:repeat(MessageBuilder)`.
 
 ```
-$ kcat -b localhost:9292 -C -t cars -f "%t [%p] at offset %o: %k = %s\n" -o -1 -e
+$ kcat -b localhost:9990 -C -t cars -f "%t [%p] at offset %o: %k = %s\n" -o -1 -e
 cars [0] at offset 30259: key-0-30259 = value-0-30259
 %4|1727425365.711|OFFSET|rdkafka#consumer-1| [thrd:main]: cars [1]: offset reset (at offset 4848 (leader epoch 0), broker 101) to offset END (leader epoch -1): fetch failed due to requested offset not available on the broker: Broker: Offset out of range
 % Reached end of topic cars [0] at offset 30260

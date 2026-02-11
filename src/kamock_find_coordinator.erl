@@ -1,6 +1,7 @@
 -module(kamock_find_coordinator).
 -export([handle_find_coordinator_request/2]).
 
+-export([return/1]).
 -export([
     make_find_coordinator_response/2,
     make_find_coordinator_error/3
@@ -14,6 +15,12 @@ handle_find_coordinator_request(
 ) ->
     Coordinator = maps:with([node_id, host, port], Env),
     make_find_coordinator_response(CorrelationId, Coordinator).
+
+return(Coordinator = #{node_id := _NodeId, host := _Host, port := _Port}) ->
+    fun
+        (_FindCoordinatorRequest = #{correlation_id := CorrelationId}, _Env) ->
+            make_find_coordinator_response(CorrelationId, Coordinator)
+    end.
 
 make_find_coordinator_response(
     CorrelationId, _Coordinator = #{node_id := NodeId, host := Host, port := Port}

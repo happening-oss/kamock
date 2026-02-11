@@ -8,16 +8,16 @@ responses unless specifically named.
 For this example, we'll use the mock cluster:
 
 ```erlang
-kamock_cluster:start(make_ref(), [101, 102, 103], #{port => 9292}).
+kamock_cluster:start(make_ref(), [101, 102, 103], #{port => 9990}).
 ```
 
 So `kcat -L` won't show any topics:
 
 ```
-$ kcat -b localhost:9292 -L
-Metadata for all topics (from broker 101: localhost:9292/101):
+$ kcat -b localhost:9990 -L
+Metadata for all topics (from broker 101: localhost:9990/101):
  3 brokers:
-  broker 101 at localhost:9292 (controller)
+  broker 101 at localhost:9990 (controller)
   broker 102 at localhost:50627
   broker 103 at localhost:50628
  0 topics:
@@ -26,10 +26,10 @@ Metadata for all topics (from broker 101: localhost:9292/101):
 If you specify a topic, it will appear:
 
 ```
-$ kcat -b localhost:9292 -L -t cars
-Metadata for cars (from broker 101: localhost:9292/101):
+$ kcat -b localhost:9990 -L -t cars
+Metadata for cars (from broker 101: localhost:9990/101):
  3 brokers:
-  broker 101 at localhost:9292
+  broker 101 at localhost:9990
   broker 102 at localhost:50753
   broker 103 at localhost:50754
  1 topics:
@@ -51,8 +51,8 @@ meck:expect(kamock_metadata, handle_metadata_request,
 And then topics named "cats" and "dogs" appear in the `Metadata` response:
 
 ```
-% kcat -b localhost:9292 -L
-Metadata for all topics (from broker 101: localhost:9292/101):
+% kcat -b localhost:9990 -L
+Metadata for all topics (from broker 101: localhost:9990/101):
  3 brokers:
   ...
  2 topics:
@@ -70,8 +70,26 @@ By default, topics have 4 partitions, numbered from 0-3. You can change the numb
 as follows:
 
 ```erlang
-meck:new(kamock_metadata_response_topic, [passthrough]).
-
 meck:expect(kamock_metadata_response_topic, make_metadata_response_topic,
-  kamock_metadata_response_topic:partitions(lists:seq(0, 63))).
+    kamock_metadata_response_topic:partitions(64)).
+```
+
+Or you can change it for individual topics as follows:
+
+```erlang
+meck:expect(kamock_metadata_response_topic, make_metadata_response_topic,
+    fun(Topic = #{name := <<"config">>}, Env) ->
+        % 'config' topic has a single partition
+        kamock_metadata_response_topic:make_metadata_response_topic(Topic, 1, Env);
+       (Topic, Env) ->
+        meck:passthrough([Topic, Env])
+    end).
+```
+
+...or as follows:
+
+```erlang
+% The 'cats' topic has 8 partitions; everything else has 1 partition.
+meck:expect(kamock_metadata_response_topic, make_metadata_response_topic,
+    kamock_metadata_response_topic:partitions(#{<<"cats">> => 8}, 1)).
 ```

@@ -7,7 +7,8 @@
 
 all_test_() ->
     {foreach, fun setup/0, fun cleanup/1, [
-        fun new_generation_id/0
+        fun new_generation_id/0,
+        fun return_error/0
     ]}.
 
 setup() ->
@@ -89,3 +90,42 @@ new_generation_id() ->
     kafcod_connection:stop(Connection),
     kamock_broker:stop(Broker),
     ok.
+
+return_error() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+    GroupId = ?GROUP_ID,
+    MemberId = <<"some_member_id">>,
+    GenerationId = 0,
+
+    meck:expect(
+        kamock_heartbeat, handle_heartbeat_request, kamock_heartbeat:return_error(12345)
+    ),
+
+    {ok, Connection} = kafcod_connection:start_link(Broker),
+
+    Request = make_request(GroupId, MemberId, GenerationId),
+
+    ?assertEqual(
+        {ok, #{
+            error_code => 12345,
+            throttle_time_ms => 0
+        }},
+        kafcod_connection:call(
+            Connection,
+            fun heartbeat_request:encode_heartbeat_request_4/1,
+            Request,
+            fun heartbeat_response:decode_heartbeat_response_4/1
+        )
+    ),
+
+    kafcod_connection:stop(Connection),
+    kamock_broker:stop(Broker),
+    ok.
+
+make_request(GroupId, MemberId, GenerationId) ->
+    #{
+        group_id => GroupId,
+        generation_id => GenerationId,
+        member_id => MemberId,
+        group_instance_id => null
+    }.
