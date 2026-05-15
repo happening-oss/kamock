@@ -292,20 +292,19 @@ fetch_batch_not_multiple_at_end() ->
     kamock_broker:stop(Broker),
     ok.
 
+flatten_batches(#{records := [#{base_offset := BaseOffset, records := Records}]}) ->
+    [
+        #{offset => BaseOffset + Delta, key => Key}
+     || #{offset_delta := Delta, key := Key} <- Records
+    ];
+flatten_batches(#{records := []}) ->
+    [].
+
 direct_test_() ->
     MessageBuilder = fun(_T, _P, O) -> #{key => <<O>>} end,
     Batches = kamock_partition_data:batches(0, 14, 3, MessageBuilder),
-    Flatten = fun
-        (#{records := [#{base_offset := BaseOffset, records := Records}]}) ->
-            [
-                #{offset => BaseOffset + Delta, key => Key}
-             || #{offset_delta := Delta, key := Key} <- Records
-            ];
-        (#{records := []}) ->
-            []
-    end,
     Test = fun(Offset) ->
-        Flatten(
+        flatten_batches(
             Batches(
                 <<"topic">>, #{partition => 0, fetch_offset => Offset}, #{}
             )

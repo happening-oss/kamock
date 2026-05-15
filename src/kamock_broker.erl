@@ -12,6 +12,8 @@
     stop/1,
     drop/1,
 
+    restart/1,
+
     info/0,
     info/1,
 
@@ -44,6 +46,9 @@ start(Ref, Options) ->
 start(Ref, Options, Cluster) ->
     start(Ref, Options, [], Cluster).
 
+start(Ref, Options, SocketOpts, Cluster) ->
+    do_start(Ref, Options, SocketOpts, Cluster).
+
 -spec start_tls(Ref :: kamock:ref(), Options :: map(), SocketOpts :: [ssl:tls_server_option()]) ->
     start_ret().
 start_tls(Ref, Options, SocketOpts) ->
@@ -58,13 +63,14 @@ start_tls(Ref, Options, SocketOpts) ->
 start_tls(Ref, Options, SocketOpts, Cluster) ->
     start(Ref, Options#{transport => ranch_ssl}, SocketOpts, Cluster).
 
-start(
+do_start(
     Ref,
     Options = #{
         node_id := NodeId,
         port := Port,
         node_ids := NodeIds,
         cluster_id := ClusterId,
+        rack := Rack,
         env := Env0,
         handler := Handler,
         transport := Transport
@@ -74,9 +80,10 @@ start(
 ) ->
     Host = <<"localhost">>,
 
+    ControllerId = maps:get(controller_id, Options, hd(NodeIds)),
+
     % Env is passed to the various handlers; some tests use the node_id to enforce node affinity. You can put arbitrary
     % items in here.
-    ControllerId = maps:get(controller_id, Options, hd(NodeIds)),
 
     % We copy a bunch of stuff into Env so that it's available to mocks.
     Env = Env0#{
@@ -85,7 +92,8 @@ start(
         node_ids => NodeIds,
         cluster => Cluster,
         cluster_id => ClusterId,
-        controller_id => ControllerId
+        controller_id => ControllerId,
+        rack => Rack
         % Note: kamock_broker_protocol will add 'host' and 'port' to Env after calling ranch:handshake.
     },
 
@@ -97,20 +105,26 @@ start(
         port => AssignedPort,
         addr => format_addr(Host, AssignedPort),
         node_id => NodeId,
-        rack => null,
-        ref => Ref
+        rack => Rack,
+        ref => Ref,
+        cluster => Cluster,
+        % We stash these for restart/1
+        options => Options#{port => AssignedPort},
+        socket_opts => SocketOpts
     },
     kamock_cluster:register_broker(Cluster, Broker),
     {ok, Broker};
-start(Ref, Options, SocketOpts, Cluster) ->
-    start(Ref, ensure_default_options(Options), SocketOpts, Cluster).
+do_start(Ref, Options, SocketOpts, Cluster) ->
+    do_start(Ref, ensure_default_options(Options), SocketOpts, Cluster).
 
 ensure_default_options(Options) ->
     DefaultOptions = #{
         node_id => 101,
         port => 0,
+        % node_ids is passed from the cluster, to the broker, to the Env, so that your mocks can see it.
         node_ids => [101],
         cluster_id => ?DEFAULT_CLUSTER_ID,
+        rack => null,
         env => #{},
         transport => ranch_tcp,
         transport_opts => [],
@@ -123,7 +137,10 @@ start_listeners(Ref, Port, Transport, SocketOpts, ProtocolOpts) ->
     {ok, _LSup} = ranch:start_listener(
         ?LISTENER_REF(Ref),
         Transport,
-        #{socket_opts => [inet, {port, Port} | SocketOpts]},
+        #{
+            socket_opts => [inet, {port, Port} | SocketOpts],
+            shutdown => brutal_kill
+        },
         kamock_broker_protocol,
         ProtocolOpts
     ),
@@ -134,7 +151,10 @@ start_listeners(Ref, Port, Transport, SocketOpts, ProtocolOpts) ->
     {ok, _LSup6} = ranch:start_listener(
         ?LISTENER_REF_6(Ref),
         Transport,
-        #{socket_opts => [inet6, {ipv6_v6only, true}, {port, AssignedPort} | SocketOpts]},
+        #{
+            socket_opts => [inet6, {ipv6_v6only, true}, {port, AssignedPort} | SocketOpts],
+            shutdown => brutal_kill
+        },
         kamock_broker_protocol,
         ProtocolOpts
     ),
@@ -143,13 +163,24 @@ start_listeners(Ref, Port, Transport, SocketOpts, ProtocolOpts) ->
 format_addr(Host, Port) when is_binary(Host), is_integer(Port) ->
     lists:flatten(io_lib:format("~s:~B", [Host, Port])).
 
+-spec stop(Broker :: kamock:broker() | kamock:ref()) -> ok.
+
+stop(Broker = #{ref := Ref, cluster := Cluster}) when is_pid(Cluster) ->
+    stop(Ref),
+    kamock_cluster:unregister_broker(Cluster, Broker),
+    ok;
 stop(_Broker = #{ref := Ref}) ->
     stop(Ref);
 stop(Ref) ->
     ranch:stop_listener(?LISTENER_REF(Ref)),
-    ranch:stop_listener(?LISTENER_REF_6(Ref)).
+    ranch:stop_listener(?LISTENER_REF_6(Ref)),
+    ok.
+
+-spec drop(Broker :: kamock:broker() | kamock:ref()) -> ok.
 
 drop(_Broker = #{ref := Ref}) ->
+    drop(Ref);
+drop(Ref) ->
     Connections = which_connections(Ref),
     lists:foreach(
         fun(Pid) when is_pid(Pid) ->
@@ -158,8 +189,11 @@ drop(_Broker = #{ref := Ref}) ->
         Connections
     ).
 
+restart(_Broker = #{ref := Ref, options := Options, socket_opts := SocketOpts, cluster := Cluster}) ->
+    do_start(Ref, Options, SocketOpts, Cluster).
+
 info() ->
-    % Filter out the IPv6 listeners.
+    % Filter out the IPv6 listeners; they're duplicates.
     maps:filtermap(
         fun
             (?LISTENER_REF(_Ref), Info) -> {true, Info};
@@ -179,6 +213,8 @@ get_port(Ref) ->
     ranch:get_port(?LISTENER_REF(Ref)).
 
 connections(_Broker = #{ref := Ref}) ->
+    connections(Ref);
+connections(Ref) ->
     Connections = which_connections(Ref),
     [kamock_broker_protocol:connection_info(C) || C <- Connections].
 

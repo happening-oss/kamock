@@ -2,12 +2,13 @@
 [{<<"crc32cer">>,{pkg,<<"crc32cer">>,<<"0.1.11">>},1},
  {<<"eqwalizer_support">>,
   {git_subdir,"https://github.com/whatsapp/eqwalizer.git",
-              {ref,"0f514eb3893fa7070835c83ecb49fbea31b0426d"},
+              {ref,"623acb6862e76350ba1dc596f1808a809042d034"},
               "eqwalizer_support"},
   0},
+ {<<"gproc">>,{pkg,<<"gproc">>,<<"0.9.1">>},0},
  {<<"kafcod">>,
   {git,"git@github.com:superbet-group/betler.lib.kafcod",
-       {ref,"b892139f5c19c20e25af10dc2ad49bb8e37ef567"}},
+       {ref,"cb77bb550a2390da986394f912ac3972d9728901"}},
   0},
  {<<"quickrand">>,{pkg,<<"quickrand">>,<<"2.0.7">>},1},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"2.1.0">>},0},
@@ -18,6 +19,7 @@
 [
 {pkg_hash,[
  {<<"crc32cer">>, <<"B550DA6D615FEB72A882D15D020F8F7DEE72DFB2CB1BCDF3B1EE8DC2AFD68CFC">>},
+ {<<"gproc">>, <<"F1DF0364423539CF0B80E8201C8B1839E229E5F9B3CCB944C5834626998F5B8C">>},
  {<<"quickrand">>, <<"D2BD76676A446E6A058D678444B7FDA1387B813710D1AF6D6E29BB92186C8820">>},
  {<<"ranch">>, <<"2261F9ED9574DCFCC444106B9F6DA155E6E540B2F82BA3D42B339B93673B72A3">>},
  {<<"snappyer">>, <<"9CC58470798648CE34C662CA0AA6DAAE31367667714C9A543384430A3586E5D3">>},
@@ -26,6 +28,7 @@
  {<<"vsn_transform">>, <<"9D4D4612C7B364579E445079266B10B7B5C3109E70D45B32A84FE01D27E82CEB">>}]},
 {pkg_hash_ext,[
  {<<"crc32cer">>, <<"A39B8F0B1990AC1BF06C3A247FC6A178B740CDFC33C3B53688DC7DD6B1855942">>},
+ {<<"gproc">>, <<"905088E32E72127ED9466F0BAC0D8E65704CA5E73EE5A62CB073C3117916D507">>},
  {<<"quickrand">>, <<"B8ACBF89A224BC217C3070CA8BEBC6EB236DBE7F9767993B274084EA044D35F0">>},
  {<<"ranch">>, <<"244EE3FA2A6175270D8E1FC59024FD9DBC76294A321057DE8F803B1479E76916">>},
  {<<"snappyer">>, <<"18D00CA218AE613416E6EECAFE1078DB86342A66F86277BD45C95F05BF1C8B29">>},

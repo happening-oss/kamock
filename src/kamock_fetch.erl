@@ -1,5 +1,6 @@
 -module(kamock_fetch).
 -export([handle_fetch_request/2]).
+-export([return_error/1]).
 
 -include_lib("kafcod/include/error_code.hrl").
 
@@ -27,3 +28,17 @@ handle_fetch_request(
         session_id => SessionId,
         throttle_time_ms => 0
     }.
+
+return_error(ErrorCode) when is_integer(ErrorCode) ->
+    fun(
+        _FetchRequest = #{correlation_id := CorrelationId},
+        _Env
+    ) ->
+        #{
+            correlation_id => CorrelationId,
+            error_code => ErrorCode,
+            responses => [],
+            session_id => 0,
+            throttle_time_ms => 0
+        }
+    end.

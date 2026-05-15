@@ -77,6 +77,45 @@ meck:expect(kamock_partition_data, make_partition_data, [
 ]).
 ```
 
+## Batches
+
+By default, we return single-record batches. To mock records in batches:
+
+```erlang
+MessageBuilder = fun(_Topic, Partition, Offset) ->
+    Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
+    Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
+    #{key => Key, value => Value}
+end,
+% 1000 messages, in batches of 7.
+meck:expect(kamock_partition_data, make_partition_data,
+    kamock_partition_data:batches(0, 1_000, 7, MessageBuilder)).
+```
+
+You can have batches of different sizes by providing a "batch locator function" instead of a batch size:
+
+```erlang
+BatchLocator = fun(FirstOffset, LastOffset, FetchOffset) when
+    FetchOffset >= FirstOffset, FetchOffset < LastOffset
+->
+    % TODO: Which batch does 'FetchOffset' land in?
+    % TODO: Figure out the base offset of that batch and the batch size.
+
+    % Note: we don't have to clamp the last batch to the end of the partition; that's done for us.
+    {BatchOffset, BatchSize}
+end.
+```
+
+Implementation details left as an exercise for the reader.
+
+The default batch locator implements fixed size batches. We also have one that "round-robins" through batch sizes:
+
+```erlang
+% The first batch has 3 messages, the second has 6, then 1, then 7, then back to 3 again, and so on...
+meck:expect(kamock_partition_data, make_partition_data,
+    kamock_partition_data:batches(0, 1_000, kamock_batch_locator:round_robin([3, 6, 1, 7]), MessageBuilder)).
+```
+
 ## Non-zero offset
 
 If you want to mock a fixed-length partition that starts at a non-zero offset, you can use
@@ -93,3 +132,16 @@ meck:expect(kamock_partition_data, make_partition_data,
         kamock_partition_data:make_error(P, 3)
     end).
 ```
+
+## Top-level error
+
+To return a top-level error code in the Fetch response (e.g. `CORRUPT_MESSAGE`), use
+`kamock_fetch:return_error/1`:
+
+```erlang
+meck:expect(kamock_fetch, handle_fetch_request,
+    kamock_fetch:return_error(?CORRUPT_MESSAGE)).
+```
+
+This returns an empty response with the given error code and resets the session ID to zero, which causes
+the client to start a new fetch session.

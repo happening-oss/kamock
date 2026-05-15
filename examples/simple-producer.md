@@ -21,5 +21,6 @@ Message = #{value => <<"Hello World!">>}.
 ok = kamock_simple_producer:produce(Broker, Topic, Partition, Message).
 ```
 
-Note that the `Produce` request is sent directly to the specified broker. If it's not the leader for the partition,
-you'll get an error. With `kamock`'s default implementation, this doesn't matter -- there's no real partition leaders.
+Note that the `Produce` request is sent directly to the specified broker -- we don't bother finding the leader for the
+partition first. With `kamock`'s default implementation, this doesn't matter -- there's no real partition leaders. With
+a real Kafka implementation (or if you've changed the default), you'll get an error.

@@ -7,6 +7,7 @@
 -define(BROKER_REF, {?MODULE, ?FUNCTION_NAME}).
 -define(TOPIC_NAME, iolist_to_binary(io_lib:format("~s___~s", [?MODULE, ?FUNCTION_NAME]))).
 -define(TABLE, binary_to_atom(iolist_to_binary(io_lib:format("~s_~s", [?MODULE, ?FUNCTION_NAME])))).
+-define(DEFAULT_TIMESTAMP, 1_772_792_822_123).
 
 %% kamock can run in an ETS-backed mode, so you can actually produce and fetch messages. We test that here.
 all_test_() ->
@@ -92,7 +93,7 @@ single_produce() ->
     Topic = ?TOPIC_NAME,
     PartitionIndex = 0,
     BatchAttributes = #{compression => none},
-    Messages = [#{key => <<"key">>, value => <<"value">>, headers => []}],
+    Messages = [#{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []}],
     Records = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
     ProduceRequest = #{
@@ -172,7 +173,7 @@ two_produces_interleaved() ->
     Topic = ?TOPIC_NAME,
     PartitionIndex = 0,
     BatchAttributes = #{compression => none},
-    Messages = [#{key => <<"key">>, value => <<"value">>, headers => []}],
+    Messages = [#{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []}],
     Records = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
     ProduceRequest = #{
@@ -251,7 +252,7 @@ two_produces_first() ->
     Topic = ?TOPIC_NAME,
     PartitionIndex = 0,
     BatchAttributes = #{compression => none},
-    Messages = [#{key => <<"key">>, value => <<"value">>, headers => []}],
+    Messages = [#{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []}],
     Records = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
     ProduceRequest = #{
@@ -323,9 +324,9 @@ produce_multiple(Table) ->
     PartitionIndex1 = 1,
     BatchAttributes = #{compression => none},
     Messages = [
-        #{key => <<"key">>, value => <<"value">>, headers => []},
-        #{key => <<"key">>, value => <<"value">>, headers => []},
-        #{key => <<"key">>, value => <<"value">>, headers => []}
+        #{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []},
+        #{timestamp => ?DEFAULT_TIMESTAMP + 1, key => <<"key">>, value => <<"value">>, headers => []},
+        #{timestamp => ?DEFAULT_TIMESTAMP + 2, key => <<"key">>, value => <<"value">>, headers => []}
     ],
     [Records] = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
@@ -523,7 +524,7 @@ not_leader(Table) ->
 
     Topic = ?TOPIC_NAME,
     BatchAttributes = #{compression => none},
-    Messages = [#{key => <<"key">>, value => <<"value">>, headers => []}],
+    Messages = [#{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []}],
     Records = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
     ProduceRequest = #{

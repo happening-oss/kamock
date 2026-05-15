@@ -77,18 +77,6 @@ meck:expect(kamock_metadata_response_topic, make_metadata_response_topic,
 Or you can change it for individual topics as follows:
 
 ```erlang
-meck:expect(kamock_metadata_response_topic, make_metadata_response_topic,
-    fun(Topic = #{name := <<"config">>}, Env) ->
-        % 'config' topic has a single partition
-        kamock_metadata_response_topic:make_metadata_response_topic(Topic, 1, Env);
-       (Topic, Env) ->
-        meck:passthrough([Topic, Env])
-    end).
-```
-
-...or as follows:
-
-```erlang
 % The 'cats' topic has 8 partitions; everything else has 1 partition.
 meck:expect(kamock_metadata_response_topic, make_metadata_response_topic,
     kamock_metadata_response_topic:partitions(#{<<"cats">> => 8}, 1)).

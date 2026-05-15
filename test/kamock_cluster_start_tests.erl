@@ -24,3 +24,14 @@ start_stop_test() ->
     % Since the unit tests pass their {module, function} as the broker ref, it should be easy to figure out which one.
     ?assertEqual(#{}, kamock_broker:info()),
     ok.
+
+stop_by_ref_test() ->
+    {ok, _Cluster, _Brokers} = kamock_cluster:start(?CLUSTER_REF, [101, 102, 103]),
+    % There should be three listeners.
+    ?assertEqual(3, map_size(kamock_broker:info())),
+
+    kamock_cluster:stop(?CLUSTER_REF),
+
+    % There should be no listeners.
+    ?assertEqual(#{}, kamock_broker:info()),
+    ok.

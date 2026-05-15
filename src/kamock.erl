@@ -20,7 +20,8 @@
     port := non_neg_integer(),
     node_id => node_id(),
     rack => rack_id(),
-    ref := ref()
+    ref := ref(),
+    cluster => pid()
 }.
 
 %% Helper, so that `erl -s kamock` works.
@@ -33,10 +34,6 @@ quick_start() ->
         make_ref(), [101, 102, 103], #{port => 9990}
     ),
     {ok, Coordinator} = kamock_coordinator:start(make_ref()),
-    meck:new(kamock_join_group, [passthrough]),
-    meck:new(kamock_sync_group, [passthrough]),
-    meck:new(kamock_leave_group, [passthrough]),
-    meck:new(kamock_heartbeat, [passthrough]),
     meck:expect(
         kamock_join_group, handle_join_group_request, kamock_coordinator:join_group(Coordinator)
     ),

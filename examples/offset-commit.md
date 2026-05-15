@@ -14,8 +14,6 @@ ets:new(committed_offsets, [named_table, public]).
 ```
 
 ```erlang
-meck:new(kamock_offset_commit, [passthrough]).
-
 meck:expect(
     kamock_offset_commit,
     handle_offset_commit_request,
@@ -24,8 +22,6 @@ meck:expect(
 ```
 
 ```erlang
-meck:new(kamock_offset_fetch, [passthrough]).
-
 meck:expect(
     kamock_offset_fetch,
     handle_offset_fetch_request,

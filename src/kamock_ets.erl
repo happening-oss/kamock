@@ -217,7 +217,7 @@ offsets_in_ets(Table) ->
 high_watermark(Table, Topic, Partition) ->
     ets:lookup_element(Table, {Topic, Partition}, 2, 0).
 
-insert(Table, Topic, Partition, Messages) when is_list(Messages) ->
+insert(Table, Topic, Partition, Messages = [_ | _]) ->
     Count = length(Messages),
     {BaseOffset, NextOffset} = update_offset(Table, Topic, Partition, Count),
     [RecordBatch] = kafcod_message_set:prepare_message_set(
@@ -231,15 +231,25 @@ insert(Table, Topic, Partition, Messages) when is_list(Messages) ->
 insert(Table, Topic, Partition, Message) when is_map(Message) ->
     insert(Table, Topic, Partition, [Message]).
 
+-spec sanitize_messages(Message :: [map()]) -> [kafcod_message_set:message()].
+
 sanitize_messages(Messages) ->
     % Make sure the messages have a key, value and headers (which is a KV-list).
     lists:map(fun sanitize_message/1, Messages).
 
+-spec sanitize_message(Message :: map()) -> kafcod_message_set:message().
+
 sanitize_message(Message) ->
+    Timestamp = maps:get(timestamp, Message, default_timestamp()),
     Key = maps:get(key, Message, null),
     Value = maps:get(value, Message, null),
     Headers = maps:get(headers, Message, []),
-    Message#{key => Key, value => Value, headers => sanitize_headers(Headers)}.
+    Message#{
+        timestamp => Timestamp, key => Key, value => Value, headers => sanitize_headers(Headers)
+    }.
+
+default_timestamp() ->
+    os:system_time(millisecond).
 
 sanitize_headers(Headers) when is_list(Headers) ->
     Headers;

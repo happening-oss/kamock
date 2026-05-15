@@ -4,14 +4,8 @@
 -include_lib("kafcod/include/isolation_level.hrl").
 
 build_fetch_request(Topic, Partitions) when is_binary(Topic), is_list(Partitions) ->
-    PartitionOffsets = lists:foldl(
-        fun(Partition, Acc) ->
-            Offset = 0,
-            Acc#{Partition => Offset}
-        end,
-        #{},
-        Partitions
-    ),
+    DefaultOffset = 0,
+    PartitionOffsets = #{Partition => DefaultOffset || Partition <- Partitions},
     build_fetch_request(Topic, PartitionOffsets);
 build_fetch_request(Topic, PartitionOffsets) when is_binary(Topic), is_map(PartitionOffsets) ->
     #{
@@ -34,29 +28,30 @@ build_fetch_request(Topic, PartitionOffsets) when is_binary(Topic), is_map(Parti
     }.
 
 build_fetch_topic(Topic, PartitionOffsets) ->
-    ByPartitionIndex = fun(#{partition := A}, #{partition := B}) -> A =< B end,
-    FetchPartitions = lists:sort(
-        ByPartitionIndex,
-        maps:fold(
-            fun(PartitionIndex, Offset, Acc) ->
-                [
-                    #{
-                        partition => PartitionIndex,
+    FetchPartitions0 = maps:fold(
+        fun(PartitionIndex, Offset, Acc) ->
+            [
+                #{
+                    partition => PartitionIndex,
 
-                        fetch_offset => Offset,
+                    fetch_offset => Offset,
 
-                        partition_max_bytes => 1_048_576,
-                        log_start_offset => -1,
+                    partition_max_bytes => 1_048_576,
+                    log_start_offset => -1,
 
-                        current_leader_epoch => -1
-                    }
-                    | Acc
-                ]
-            end,
-            [],
-            PartitionOffsets
-        )
+                    current_leader_epoch => -1
+                }
+                | Acc
+            ]
+        end,
+        [],
+        PartitionOffsets
     ),
+
+    % We sort the partitions by index for consistency in test assertions.
+    ByPartitionIndex = fun(#{partition := A}, #{partition := B}) -> A =< B end,
+    FetchPartitions = lists:sort(ByPartitionIndex, FetchPartitions0),
+
     #{
         topic => Topic,
         partitions => FetchPartitions

@@ -18,6 +18,7 @@ setup() ->
 
 cleanup(_) ->
     meck:unload().
+
 offset_fetch() ->
     {ok, Broker} = kamock_broker:start(?BROKER_REF),
     {ok, Connection} = kafcod_connection:start_link(Broker),

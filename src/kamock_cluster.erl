@@ -16,10 +16,16 @@
     handle_event/4,
     terminate/3
 ]).
-% For internal use; adding/removing brokers dynamically is not supported.
+% For internal use.
+%
+% Used during initial cluster creation, or when stopping/restarting a broker that's already in the cluster.
+%
+% We do *not* support dynamically registering/unregistering brokers -- each broker ends up with a different view of
+% which node IDs are in the cluster, which breaks metadata.
 -export([
     get_brokers/1,
-    register_broker/2
+    register_broker/2,
+    unregister_broker/2
 ]).
 
 -type start_ret() :: {ok, Cluster :: pid(), Brokers :: [kamock:broker()]}.
@@ -44,9 +50,12 @@ start(Ref, NodeIds, Options) when is_list(NodeIds), is_map(Options) ->
 start(Ref, NodeIds, Options, SocketOpts) ->
     % We need a place to store the port numbers for the brokers in the "cluster", otherwise we can't respond to a
     % Metadata request properly. That information lives in 'Cluster'.
-    {ok, Cluster} = gen_statem:start(?MODULE, [], []),
+    {ok, Cluster} = gen_statem:start(via(Ref), ?MODULE, [], []),
     Brokers = start_brokers(Ref, Cluster, NodeIds, Options#{node_ids => NodeIds}, SocketOpts, []),
     {ok, Cluster, Brokers}.
+
+via(Ref) ->
+    {via, gproc, {n, l, {?MODULE, Ref}}}.
 
 start_tls(Ref, NodeIds, Options, SocketOpts) ->
     start(Ref, NodeIds, Options#{transport => ranch_ssl}, SocketOpts).
@@ -65,19 +74,19 @@ start_brokers(_Ref, _Cluster, [], _Options, _SocketOpts, Brokers) ->
     lists:reverse(Brokers).
 
 stop(Cluster) when is_pid(Cluster) ->
-    % We don't support stopping a cluster by ref, because that would require some kind of process registry, and we don't
-    % want to take a dependency on, say, gproc, or whatever. We can't use 'local', because we allow `any()` as the ref.
-    gen_statem:stop(Cluster).
+    gen_statem:stop(Cluster);
+stop(Ref) ->
+    gen_statem:stop(via(Ref)).
 
 -record(state, {
-    brokers
+    brokers :: #{kamock:node_id() => kamock:broker()}
 }).
 
 init([]) ->
     process_flag(trap_exit, true),
 
     StateData = #state{
-        brokers = []
+        brokers = #{}
     },
     {ok, ready, StateData}.
 
@@ -87,16 +96,29 @@ callback_mode() ->
 handle_event(
     {call, From}, get_brokers, _State, _StateData = #state{brokers = Brokers}
 ) ->
-    {keep_state_and_data, [{reply, From, lists:sort(fun order_brokers_by_node_id/2, Brokers)}]};
+    {keep_state_and_data, [
+        {reply, From, lists:sort(fun order_brokers_by_node_id/2, maps:values(Brokers))}
+    ]};
 handle_event(
     {call, From}, {register_broker, Broker}, _State, StateData = #state{brokers = Brokers}
 ) ->
-    StateData2 = StateData#state{brokers = [Broker | Brokers]},
+    #{node_id := NodeId} = Broker,
+    StateData2 = StateData#state{brokers = Brokers#{NodeId => Broker}},
+    {keep_state, StateData2, [{reply, From, ok}]};
+handle_event(
+    {call, From}, {unregister_broker, Broker}, _State, StateData = #state{brokers = Brokers}
+) ->
+    #{node_id := NodeId} = Broker,
+    StateData2 = StateData#state{brokers = maps:remove(NodeId, Brokers)},
     {keep_state, StateData2, [{reply, From, ok}]}.
 
 terminate(_Reason, _State, _StateData = #state{brokers = Brokers}) ->
-    lists:foreach(fun kamock_broker:stop/1, Brokers),
+    maps:foreach(fun stop_broker/2, Brokers),
     ok.
+
+stop_broker(_NodeId, Broker) ->
+    % Remove 'cluster' from the Broker, so it doesn't try unregistering.
+    kamock_broker:stop(maps:without([cluster], Broker)).
 
 order_brokers_by_node_id(#{node_id := A}, #{node_id := B}) ->
     A =< B.
@@ -106,6 +128,9 @@ get_brokers(Cluster) ->
 
 register_broker(Cluster, Broker) ->
     call(Cluster, {register_broker, Broker}, ok).
+
+unregister_broker(Cluster, Broker) ->
+    call(Cluster, {unregister_broker, Broker}, ok).
 
 call(Cluster, Request, _Default) when Cluster /= undefined ->
     gen_statem:call(Cluster, Request);

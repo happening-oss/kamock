@@ -21,8 +21,12 @@ cleanup(_) ->
 all_test_() ->
     {foreach, fun setup/0, fun cleanup/1, [
         fun empty_topic/0,
+        fun range/0,
+        fun non_zero_range/0,
+        fun repeat/0,
         fun single_message_range_on_single_partition/0,
         fun single_message_on_single_partition/0,
+        fun multiple_record_batches/0,
         fun not_leader_or_follower/0
     ]}.
 
@@ -32,23 +36,9 @@ empty_topic() ->
     % Defaults to empty anyway, but we'll be explicit.
     meck:expect(kamock_partition_data, make_partition_data, kamock_partition_data:empty()),
 
-    Topic = ?TOPIC_NAME,
-    Partitions = [0, 1, 2, 3],
     {ok, C} = kafcod_connection:start_link(Broker),
 
-    FetchRequest = kamock_fetch_request:build_fetch_request(Topic, Partitions),
-
-    {ok, #{
-        error_code := ?NONE,
-        responses := [#{partitions := PartitionResponses, topic := Topic}]
-    }} =
-        kafcod_connection:call(
-            C,
-            fun fetch_request:encode_fetch_request_11/1,
-            FetchRequest,
-            fun fetch_response:decode_fetch_response_11/1
-        ),
-
+    PartitionResponses = do_fetch(C, ?TOPIC_NAME, [0, 1, 2, 3]),
     ?assertMatch(
         [
             #{partition_index := 0, error_code := ?NONE, records := []},
@@ -63,11 +53,197 @@ empty_topic() ->
     kamock_broker:stop(Broker),
     ok.
 
+range() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+
+    MessageBuilder = fun(_Topic, Partition, Offset) ->
+        Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
+        Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
+        #{key => Key, value => Value}
+    end,
+    meck:expect(
+        kamock_partition_data,
+        make_partition_data,
+        kamock_partition_data:range(0, 2, MessageBuilder)
+    ),
+
+    {ok, C} = kafcod_connection:start_link(Broker),
+
+    % some records...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 2,
+                records := [#{base_offset := 0, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 0})
+    ),
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 2,
+                records := [#{base_offset := 1, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 1})
+    ),
+    % ...then empty...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 2,
+                records := []
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 2})
+    ),
+    % ...then out of range...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                error_code := ?OFFSET_OUT_OF_RANGE
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 3})
+    ),
+
+    kafcod_connection:stop(C),
+    kamock_broker:stop(Broker),
+    ok.
+
+non_zero_range() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+
+    MessageBuilder = fun(_Topic, Partition, Offset) ->
+        Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
+        Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
+        #{key => Key, value => Value}
+    end,
+    meck:expect(
+        kamock_partition_data,
+        make_partition_data,
+        kamock_partition_data:range(1, 3, MessageBuilder)
+    ),
+
+    {ok, C} = kafcod_connection:start_link(Broker),
+
+    % start with out of range...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                error_code := ?OFFSET_OUT_OF_RANGE
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 0})
+    ),
+    % ...then records...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 3,
+                records := [#{base_offset := 1, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 1})
+    ),
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 3,
+                records := [#{base_offset := 2, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 2})
+    ),
+    % ...then empty...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 3,
+                records := []
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 3})
+    ),
+    % ...then out of range again...
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                error_code := ?OFFSET_OUT_OF_RANGE
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 4})
+    ),
+
+    kafcod_connection:stop(C),
+    kamock_broker:stop(Broker),
+    ok.
+
+repeat() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
+
+    MessageBuilder = fun(_Topic, Partition, Offset) ->
+        Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
+        Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
+        #{key => Key, value => Value}
+    end,
+    meck:expect(
+        kamock_partition_data,
+        make_partition_data,
+        kamock_partition_data:repeat(MessageBuilder)
+    ),
+
+    {ok, C} = kafcod_connection:start_link(Broker),
+
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 1,
+                records := [#{base_offset := 0, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 0})
+    ),
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 2,
+                records := [#{base_offset := 1, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 1})
+    ),
+    % ...and so on, ad infinitum.
+    ?assertMatch(
+        [
+            #{
+                partition_index := 0,
+                high_watermark := 14555,
+                records := [#{base_offset := 14554, records := [#{offset_delta := 0}]}]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 14554})
+    ),
+
+    kafcod_connection:stop(C),
+    kamock_broker:stop(Broker),
+    ok.
+
 single_message_range_on_single_partition() ->
     {ok, Broker} = kamock_broker:start(?BROKER_REF),
 
-    % After writing all of that complicated meck stuff, I realised that because the client tracks the offset, it could
-    % be replaced with the following:
     MessageBuilder = fun(_Topic, Partition, Offset) ->
         Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
         Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
@@ -92,8 +268,6 @@ single_message_range_on_single_partition() ->
 single_message_on_single_partition() ->
     {ok, Broker} = kamock_broker:start(?BROKER_REF),
 
-    % After writing all of that complicated meck stuff, I realised that because the client tracks the offset, it could
-    % be replaced with the following:
     MessageBuilder = fun(_Topic, Partition, Offset) ->
         Key = iolist_to_binary(io_lib:format("key-~B-~B", [Partition, Offset])),
         Value = iolist_to_binary(io_lib:format("value-~B-~B", [Partition, Offset])),
@@ -115,10 +289,70 @@ single_message_on_single_partition() ->
     kamock_broker:stop(Broker),
     ok.
 
-assert_single_message(Connection) ->
-    Topic = ?TOPIC_NAME,
-    Partitions = [0, 1, 2, 3],
+multiple_record_batches() ->
+    {ok, Broker} = kamock_broker:start(?BROKER_REF),
 
+    FirstOffset = 0,
+    LastOffset = 4,
+    PartitionDataBuilder = fun(_T, PartitionIndex, _FetchOffset = 0) ->
+        Timestamp = erlang:system_time(millisecond),
+        Records0 = [
+            kamock_partition_data_builder:make_record(0, #{key => <<"0">>}),
+            kamock_partition_data_builder:make_record(1, #{key => <<"1">>})
+        ],
+        Records2 = [
+            kamock_partition_data_builder:make_record(0, #{key => <<"2">>}),
+            kamock_partition_data_builder:make_record(1, #{key => <<"3">>})
+        ],
+        RecordBatches = [
+            % Test both /3 and /4 variants.
+            kamock_partition_data_builder:make_record_batch(
+                0, Timestamp, Records0
+            ),
+            kamock_partition_data_builder:make_record_batch(
+                2, 1, Timestamp, Records2
+            )
+        ],
+
+        kamock_partition_data_builder:make_partition_data(
+            PartitionIndex, FirstOffset, LastOffset, RecordBatches
+        )
+    end,
+
+    meck:expect(
+        kamock_partition_data,
+        make_partition_data,
+        kamock_partition_data:bounded(FirstOffset, LastOffset, PartitionDataBuilder)
+    ),
+
+    {ok, C} = kafcod_connection:start_link(Broker),
+
+    ?assertMatch(
+        [
+            #{
+                high_watermark := 4,
+                records := [
+                    #{
+                        records := [#{key := <<"0">>}, #{key := <<"1">>}],
+                        base_offset := 0,
+                        last_offset_delta := 1
+                    },
+                    #{
+                        records := [#{key := <<"2">>}, #{key := <<"3">>}],
+                        base_offset := 2,
+                        last_offset_delta := 1
+                    }
+                ]
+            }
+        ],
+        do_fetch(C, ?TOPIC_NAME, #{0 => 0})
+    ),
+
+    kafcod_connection:stop(C),
+    kamock_broker:stop(Broker),
+    ok.
+
+do_fetch(Connection, Topic, Partitions) ->
     FetchRequest = kamock_fetch_request:build_fetch_request(Topic, Partitions),
 
     {ok, #{
@@ -131,6 +365,10 @@ assert_single_message(Connection) ->
             FetchRequest,
             fun fetch_response:decode_fetch_response_11/1
         ),
+    PartitionResponses.
+
+assert_single_message(Connection) ->
+    PartitionResponses = do_fetch(Connection, ?TOPIC_NAME, [0, 1, 2, 3]),
     ?assertMatch(
         [
             #{

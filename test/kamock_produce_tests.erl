@@ -4,6 +4,7 @@
 
 -define(BROKER_REF, {?MODULE, ?FUNCTION_NAME}).
 -define(TOPIC_NAME, iolist_to_binary(io_lib:format("~s___~s", [?MODULE, ?FUNCTION_NAME]))).
+-define(DEFAULT_TIMESTAMP, 1_772_792_822_123).
 
 setup() ->
     ok.
@@ -27,7 +28,7 @@ produce_single_message() ->
     Topic = ?TOPIC_NAME,
     PartitionIndex = 0,
     BatchAttributes = #{compression => none},
-    Messages = [#{key => <<"key">>, value => <<"value">>, headers => []}],
+    Messages = [#{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []}],
     Records = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
     ProduceRequest = #{
@@ -87,7 +88,7 @@ not_leader() ->
 
     Topic = ?TOPIC_NAME,
     BatchAttributes = #{compression => none},
-    Messages = [#{key => <<"key">>, value => <<"value">>, headers => []}],
+    Messages = [#{timestamp => ?DEFAULT_TIMESTAMP, key => <<"key">>, value => <<"value">>, headers => []}],
     Records = kafcod_message_set:prepare_message_set(BatchAttributes, Messages),
 
     ProduceRequest = #{

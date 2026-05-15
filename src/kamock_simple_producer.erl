@@ -59,15 +59,23 @@ produce(#{host := _, port := _} = Broker, Topic, PartitionIndex, Messages) when
     kafcod_connection:stop(C),
     ok.
 
+-spec sanitize_messages(Message :: [map()]) -> [kafcod_message_set:message()].
+
 sanitize_messages(Messages) ->
     % Make sure the messages have a key, value and headers (which is a KV-list).
     lists:map(fun sanitize_message/1, Messages).
 
+-spec sanitize_message(Message :: map()) -> kafcod_message_set:message().
+
 sanitize_message(Message) ->
+    Timestamp = maps:get(timestamp, Message, default_timestamp()),
     Key = maps:get(key, Message, null),
     Value = maps:get(value, Message, null),
     Headers = maps:get(headers, Message, []),
-    Message#{key => Key, value => Value, headers => sanitize_headers(Headers)}.
+    Message#{timestamp => Timestamp, key => Key, value => Value, headers => sanitize_headers(Headers)}.
+
+default_timestamp() ->
+    os:system_time(millisecond).
 
 sanitize_headers(Headers) when is_list(Headers) ->
     Headers;
