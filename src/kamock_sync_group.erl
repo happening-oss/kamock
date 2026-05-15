@@ -67,40 +67,31 @@ wait_for_members(LeaderId, FollowerIds) ->
             wait_for_members_as_follower(SyncGroupRequest, LeaderId)
     end.
 
--define(member_key(GroupId, MemberId), {n, l, {GroupId, MemberId}}).
+-define(member_key(GroupId, GenerationId, MemberId), {n, l, {GroupId, GenerationId, MemberId}}).
 
-wait_for_members_as_follower(
-    _SyncGroupRequest = #{
-        correlation_id := CorrelationId,
+wait_for_members_as_leader(
+    SyncGroupRequest = #{
         group_id := GroupId,
-        member_id := MemberId,
-        protocol_type := ProtocolType,
-        protocol_name := ProtocolName,
-        assignments := []
+        generation_id := GenerationId
     },
-    _LeaderId
+    LeaderId,
+    FollowerIds
 ) ->
-    % The leader is going to wait for all of the members to join, so we need to tell it we're here.
-    gproc:ensure_reg(?member_key(GroupId, MemberId)),
-    receive
-        {assignment, Assignment} ->
-            make_sync_group_response(CorrelationId, Assignment, ProtocolType, ProtocolName)
-    end.
-
-wait_for_members_as_leader(SyncGroupRequest = #{group_id := GroupId}, LeaderId, FollowerIds) ->
-    gproc:ensure_reg(?member_key(GroupId, LeaderId)),
+    gproc:ensure_reg(?member_key(GroupId, GenerationId, LeaderId)),
     wait_for_members_as_leader(SyncGroupRequest, FollowerIds).
 
 wait_for_members_as_leader(
     SyncGroupRequest = #{
-        group_id := GroupId, assignments := Assignments
+        group_id := GroupId,
+        generation_id := GenerationId,
+        assignments := Assignments
     },
     [FollowerId | FollowerIds]
 ) ->
-    % Wait for the given follower to join.
-    gproc:await(?member_key(GroupId, FollowerId)),
+    % Wait for the given follower to sync.
+    gproc:await(?member_key(GroupId, GenerationId, FollowerId)),
     Assignment = find_assignment(FollowerId, Assignments),
-    gproc:send(?member_key(GroupId, FollowerId), {assignment, Assignment}),
+    gproc:send(?member_key(GroupId, GenerationId, FollowerId), {assignment, Assignment}),
     wait_for_members_as_leader(SyncGroupRequest, FollowerIds);
 wait_for_members_as_leader(
     _SyncGroupRequest = #{
@@ -115,6 +106,25 @@ wait_for_members_as_leader(
     % No more followers; we're done.
     Assignment = find_assignment(MemberId, Assignments),
     make_sync_group_response(CorrelationId, Assignment, ProtocolType, ProtocolName).
+
+wait_for_members_as_follower(
+    _SyncGroupRequest = #{
+        correlation_id := CorrelationId,
+        group_id := GroupId,
+        generation_id := GenerationId,
+        member_id := MemberId,
+        protocol_type := ProtocolType,
+        protocol_name := ProtocolName,
+        assignments := []
+    },
+    _LeaderId
+) ->
+    % The leader is going to wait for all of the members to join, so we need to tell it we're here.
+    gproc:ensure_reg(?member_key(GroupId, GenerationId, MemberId)),
+    receive
+        {assignment, Assignment} ->
+            make_sync_group_response(CorrelationId, Assignment, ProtocolType, ProtocolName)
+    end.
 
 return_error(ErrorCode) ->
     fun(#{correlation_id := CorrelationId}, _Env) ->
